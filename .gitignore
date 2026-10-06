@@ -59,7 +59,6 @@ secrets.properties
 # Test reports
 test-output/
 test-results/
-*.xml
 
 # Coverage
 coverage/

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NetValve</string>
+    <string name="vpn_channel_name">NetValve tunnel</string>
+    <string name="vpn_channel_desc">Shows while NetValve is controlling app traffic</string>
+    <string name="vpn_notification_title">NetValve is active</string>
+    <string name="vpn_notification_text">%1$d apps controlled · ↓ %2$s · ↑ %3$s</string>
+    <string name="action_stop">Stop</string>
+    <string name="action_pause_all">Pause</string>
+</resources>
