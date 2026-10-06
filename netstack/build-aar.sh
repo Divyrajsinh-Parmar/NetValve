@@ -40,7 +40,7 @@ echo "==> Resolve modules"
 go mod tidy
 
 echo "==> Compile check (host arch, no cgo) before binding"
-GOFLAGS=-mod=mod go build ./...
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 GOFLAGS=-mod=mod go build ./...
 
 echo "==> Install gomobile + gobind"
 go install golang.org/x/mobile/cmd/gomobile@latest
