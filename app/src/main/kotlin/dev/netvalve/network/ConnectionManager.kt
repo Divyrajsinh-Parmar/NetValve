@@ -25,6 +25,9 @@ class ConnectionManager(
 ) {
     fun connectTcp(ctx: FlowContext, protector: SocketProtector): TcpUpstream {
         val socket = Socket()
+        // java.net.Socket creates its OS socket lazily, so protect() sees no valid
+        // file descriptor and returns false. Bind first to force the fd to exist.
+        runCatching { socket.bind(InetSocketAddress(0)) }
         // Protect BEFORE connect so the SYN is not routed back into the tunnel.
         if (!protector.protect(socket)) {
             logger.w(LogCategory.ERROR, "protect() failed for ${ctx.shortKey()}")

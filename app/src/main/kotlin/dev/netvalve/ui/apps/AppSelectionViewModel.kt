@@ -3,6 +3,8 @@ package dev.netvalve.ui.apps
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.netvalve.data.model.InstalledApp
+import dev.netvalve.data.model.SelectionMode
+import dev.netvalve.repository.SettingsRepository
 import dev.netvalve.repository.AppSelectionRepository
 import dev.netvalve.repository.InstalledAppsRepository
 import dev.netvalve.service.VpnController
@@ -12,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -32,6 +35,7 @@ class AppSelectionViewModel @Inject constructor(
     private val installedApps: InstalledAppsRepository,
     private val selectionRepository: AppSelectionRepository,
     private val controller: VpnController,
+    settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     private val query = MutableStateFlow("")
@@ -60,6 +64,11 @@ class AppSelectionViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppsUiState())
 
+    /** Decides what a ticked checkbox means (controlled vs excluded). */
+    val selectionMode: StateFlow<SelectionMode> = settingsRepository.settings
+        .map { it.selectionMode }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SelectionMode.ONLY_SELECTED)
+
     fun setQuery(q: String) { query.value = q }
 
     fun setIncludeSystem(value: Boolean) {
@@ -68,10 +77,15 @@ class AppSelectionViewModel @Inject constructor(
     }
 
     fun toggle(packageName: String, selected: Boolean) {
-        viewModelScope.launch {
-            selectionRepository.setSelected(packageName, selected)
-            if (controller.status.value.isActive) pendingRestart.value = true
-        }
+        if (controller.status.value.isActive) pendingRestart.value = true
+        viewModelScope.launch { selectionRepository.setSelected(packageName, selected) }
+    }
+
+    /** Tick or untick every app currently shown (respects the search filter). */
+    fun setAllShown(selected: Boolean) {
+        val shown = uiState.value.apps.map { it.app.packageName }
+        if (controller.status.value.isActive) pendingRestart.value = true
+        viewModelScope.launch { shown.forEach { selectionRepository.setSelected(it, selected) } }
     }
 
     /** Rebuild the tunnel so the new allow/deny list takes effect. */

@@ -1,5 +1,6 @@
 package dev.netvalve.ui.apps
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -30,13 +31,21 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.core.graphics.drawable.toBitmap
+import dev.netvalve.data.model.SelectionMode
 import dev.netvalve.ui.components.EmptyState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,6 +54,7 @@ fun AppsScreen(
     viewModel: AppSelectionViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val mode by viewModel.selectionMode.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(title = { Text("Apps") })
@@ -58,7 +68,24 @@ fun AppsScreen(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
         )
 
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text(
+            if (mode == SelectionMode.ONLY_SELECTED) {
+                "Ticked apps go through NetValve and can be controlled. Unticked apps are left alone."
+            } else {
+                "Ticked apps are EXCLUDED from NetValve. All other apps are controlled."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        )
+
+        Row(
+            Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            androidx.compose.material3.TextButton(onClick = { viewModel.setAllShown(true) }) { Text("Tick all") }
+            androidx.compose.material3.TextButton(onClick = { viewModel.setAllShown(false) }) { Text("Clear all") }
+            Spacer(Modifier.width(8.dp))
             FilterChip(
                 selected = state.includeSystem,
                 onClick = { viewModel.setIncludeSystem(!state.includeSystem) },
@@ -114,7 +141,7 @@ private fun AppRow(
         Modifier.fillMaxWidth().clickable { onToggle(!selected) }.padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        LetterAvatar(label)
+        AppIcon(packageName, label)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -128,6 +155,24 @@ private fun AppRow(
         }
         IconButton(onClick = onOpen) { Icon(Icons.Filled.Tune, contentDescription = "Configure") }
         Checkbox(checked = selected, onCheckedChange = onToggle)
+    }
+}
+
+@Composable
+private fun AppIcon(packageName: String, label: String) {
+    val context = LocalContext.current
+    val icon by produceState<ImageBitmap?>(initialValue = null, packageName) {
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                context.packageManager.getApplicationIcon(packageName).toBitmap(96, 96).asImageBitmap()
+            }.getOrNull()
+        }
+    }
+    val bitmap = icon
+    if (bitmap != null) {
+        Image(bitmap = bitmap, contentDescription = label, modifier = Modifier.size(36.dp))
+    } else {
+        LetterAvatar(label)
     }
 }
 

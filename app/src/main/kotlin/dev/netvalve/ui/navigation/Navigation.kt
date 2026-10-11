@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -54,6 +55,21 @@ sealed class Destination(val route: String, val label: String, val icon: ImageVe
     }
 }
 
+/** Bottom-bar tab switch. Dashboard is the start destination, so pop back to it. */
+private fun NavHostController.switchTab(dest: Destination) {
+    if (dest == Destination.Dashboard) {
+        if (!popBackStack(Destination.Dashboard.route, inclusive = false)) {
+            navigate(Destination.Dashboard.route) { launchSingleTop = true }
+        }
+    } else {
+        navigate(dest.route) {
+            popUpTo(graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+}
+
 @Composable
 fun NetValveNavGraph(actions: AppActions) {
     val nav = rememberNavController()
@@ -64,14 +80,9 @@ fun NetValveNavGraph(actions: AppActions) {
             NavigationBar {
                 Destination.bottomBar.forEach { dest ->
                     NavigationBarItem(
-                        selected = currentRoute == dest.route,
-                        onClick = {
-                            nav.navigate(dest.route) {
-                                popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
+                        selected = currentRoute == dest.route ||
+                            (dest == Destination.Apps && currentRoute == Destination.APP_DETAIL_ROUTE),
+                        onClick = { nav.switchTab(dest) },
                         icon = { Icon(dest.icon, contentDescription = dest.label) },
                         label = { Text(dest.label) },
                     )
@@ -87,7 +98,7 @@ fun NetValveNavGraph(actions: AppActions) {
             composable(Destination.Dashboard.route) {
                 DashboardScreen(
                     actions = actions,
-                    onOpenApps = { nav.navigate(Destination.Apps.route) },
+                    onOpenApps = { nav.switchTab(Destination.Apps) },
                     onOpenApp = { pkg -> nav.navigate(Destination.appDetail(pkg)) },
                 )
             }
