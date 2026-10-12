@@ -53,7 +53,7 @@ Give this file and `docs/IMPLEMENTATION_ROADMAP.md` (or simply the repo zip, whi
 | Upstream | https://github.com/IEAmir/NetValve (Apache-2.0) |
 | Our fork | https://github.com/Divyrajsinh-Parmar/NetValve |
 | Pinned base commit | `f7b34b0` (tag `pinned-base`); we never track upstream |
-| Local folder | `~/projects/qos-priority-scheduler`, branch `qos-scheduler` |
+| Local folder | `~/Downloads/qos-priority-scheduler`, branch `qos-scheduler` |
 
 NetValve provides: per-app shaping via a local VPN, gVisor netstack (built by gomobile into `app/libs/netstack.aar`), token-bucket pacing both directions, UDP pacing, DNS exemption, UID attribution with an Unknown fallback, a TrafficModule plugin API, Compose UI, Room and DataStore. The default build uses a **loopback engine that does not forward traffic**; the real engine needs `-Pnetvalve.netstack=true` (arm64 only).
 
@@ -125,8 +125,8 @@ History (condensed): installed tools and SDK pieces; forked and pinned; `chmod +
 **Adopt this package (also roadmap M0):**
 
 ```bash
-cd ~/projects && mv qos-priority-scheduler qos-priority-scheduler.old
-unzip ~/Downloads/qos-priority-scheduler-v2.zip -d ~/projects
+cd ~/Downloads && mv qos-priority-scheduler qos-priority-scheduler.old
+unzip ~/Downloads/qos-priority-scheduler-v2.zip -d ~/Downloads
 cd qos-priority-scheduler
 echo "sdk.dir=$ANDROID_HOME" > local.properties
 ./gradlew test
@@ -137,7 +137,7 @@ git add -A && git commit -m "Cleanup, scheduler core with tests and simulator, d
 **Make a clean zip (never Finder):**
 
 ```bash
-cd ~/projects
+cd ~/Downloads
 zip -r ~/Desktop/qos-priority-scheduler.zip qos-priority-scheduler -x "*/.gradle/*" "*/build/*" "*/.kotlin/*" "*/.idea/*" "*/local.properties" "*.DS_Store"
 ```
 
@@ -225,7 +225,7 @@ M0 adopt and verify · M1 PayProbe · M2 Go/No-Go experiment · M3 wire the sche
 - New logic goes in `dev.netvalve.scheduler` (pure Kotlin, tested). Never rewrite the relay or the netstack. Keep upstream edits tiny and list them in `NOTICE.md`.
 - Do not use `removeFirst()` or `removeLast()` on `MutableList` or `java.util` collections (on JDK 21 they bind to Java methods missing on older Android). `kotlin.collections.ArrayDeque` is fine.
 - Ask for the full error text (Gradle: the "What went wrong" block). Stay honest about limits.
-- Machine: MacBook Air M1, folder `~/projects/qos-priority-scheduler`, phone OnePlus Nord CE5 (OxygenOS 16).
+- Machine: MacBook Air M1, folder `~/Downloads/qos-priority-scheduler`, phone OnePlus Nord CE5 (OxygenOS 16).
 
 ## 14. Glossary
 

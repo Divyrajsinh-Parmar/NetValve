@@ -174,7 +174,7 @@ Mode and parameters: handoff Section 9 (tick 10 ms, grant 4096 B, hold 2000 ms, 
 
 **Start of a session:**
 
-> Project: priority scheduler on NetValve (repo ~/projects/qos-priority-scheduler). Read docs/PROJECT_HANDOFF.md and docs/IMPLEMENTATION_ROADMAP.md. We are working on milestone M<number>. First read the relevant real code and state the exact files and functions you will touch. Keep new logic in framework-free Kotlin with JVM tests. Give me small copy-paste steps, explain in Hinglish like a short story, and ask for my output after each step.
+> Project: priority scheduler on NetValve (repo ~/Downloads/qos-priority-scheduler). Read docs/PROJECT_HANDOFF.md and docs/IMPLEMENTATION_ROADMAP.md. We are working on milestone M<number>. First read the relevant real code and state the exact files and functions you will touch. Keep new logic in framework-free Kotlin with JVM tests. Give me small copy-paste steps, explain in Hinglish like a short story, and ask for my output after each step.
 
 **End of a session:**
 
