@@ -112,10 +112,11 @@ The zip the student shared was **246 MB**: Finder had zipped `app/build` (230 MB
 | `a482a91` | restored manifest and resources, fixed `.gitignore`, executable scripts |
 | `ea5f537` / `week1-aar-built` | netstack AAR, macOS fix in `build-aar.sh`, go.mod and go.sum |
 | `511c0de` | first fix round and the v1 handoff report |
-| **staged, not committed (this package)** | cleanup, scheduler core, simulator, docs, build tuning |
+| `3df8724` / `scheduler-core` | cleanup, scheduler core, simulator, docs v2, build tuning |
+| `5e49d1c` | docs: project now lives in ~/Downloads/qos-priority-scheduler |
 
 Cleanup done: removed `README.fa.md`, `publish-to-github.sh` and the duplicate root `PROJECT_HANDOFF.md`; moved upstream `README.md`, `HANDOFF.md` and screenshots to `docs/upstream/`; new short `README.md`; new `NOTICE.md` (attribution and every changed file); `.gitignore` gained `.kotlin/` and `__MACOSX/`.
-To commit: `git add -A && git commit -m "Cleanup, scheduler core with tests and simulator, docs v2"` then `git tag scheduler-core`.
+Committed on 12 Oct 2026.
 **When zipping on the Mac use the terminal command in Section 7, not Finder.**
 
 ## 7. Setup and build log, and how to adopt this package
@@ -201,7 +202,7 @@ Pure Kotlin, no Android imports, deterministic (injected clock), so it is testab
 
 **What it does NOT show:** any behaviour of the real phone, WiFi, cellular, TCP dynamics, kernel buffers or downlink lag. Those are the job of milestones M2 and M6. If the phone shows a weak effect, these simulation results remain the algorithm contribution (Plan C is already substantially met).
 
-**Verification status.** Verified in a sandbox with Kotlin 2.0.21, JUnit 4.13.2, JDK 21 and the coroutines jar shipped in the Kotlin distribution: all 36 tests pass and the scheduler sources compile with warnings as errors. **Not verified:** the Gradle and Android build of the whole app (Hilt, KSP, Compose), the 7 upstream suites under Gradle, Room, and anything on the phone. The first action after adopting this package is `./gradlew test` and an APK build (roadmap M0).
+**Verification status.** Verified in a sandbox with Kotlin 2.0.21, JUnit 4.13.2, JDK 21 and the coroutines jar shipped in the Kotlin distribution: all 36 tests pass and the scheduler sources compile with warnings as errors. **Also verified on the Mac (12 Oct 2026, milestone M0):** `./gradlew test` and the real-engine APK build succeed, and all 36 new tests pass under Gradle. **Not verified:** anything on the phone.
 
 ## 11. Remaining work (summary; details in the roadmap)
 
@@ -240,3 +241,4 @@ M0 adopt and verify · M1 PayProbe · M2 Go/No-Go experiment · M3 wire the sche
 | 12 Oct 2026 | **v2.0.** Package audited (246 MB to 13 MB); upstream clutter removed or moved; NOTICE.md and new README; `gradle.properties` retuned | 6, 7 |
 | 12 Oct 2026 | Scheduler core (Mode B, Mode A rule, calibration maths, coroutine adapter, tier rules) written and verified with 36 JVM tests; fairness bug found and fixed | 9, 8 |
 | 12 Oct 2026 | Bottleneck simulation of C1 to C5 added; results recorded; roadmap rewritten as dependency-ordered milestones (no calendar weeks) | 10, 11 |
+| 12 Oct 2026 | **M0 done.** Package adopted at ~/Downloads/qos-priority-scheduler; 36 scheduler tests pass under Gradle; committed (3df8724, tag scheduler-core); old folders removed | 6, 10 |

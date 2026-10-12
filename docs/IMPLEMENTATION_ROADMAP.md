@@ -160,7 +160,7 @@ Mode and parameters: handoff Section 9 (tick 10 ms, grant 4096 B, hold 2000 ms, 
 
 | Milestone | Name | Status | Date | Notes |
 |---|---|---|---|---|
-| M0 | Adopt package and verify | not started | | |
+| M0 | Adopt package and verify | done | 12 Oct 2026 | 36 new tests pass under Gradle; commit 3df8724, tag scheduler-core |
 | M1 | PayProbe v0 | not started | | |
 | M2 | Go/No-Go experiment | not started | | |
 | M3 | Wire scheduler into relay | not started | | |
