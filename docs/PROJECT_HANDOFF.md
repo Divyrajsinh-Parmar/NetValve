@@ -1,94 +1,94 @@
-# NetValve-Based Priority-Aware Traffic Scheduler for Android
+# Priority-Aware Traffic Scheduler for Android: Project Handoff Report
 
-**Project Handoff and Progress Report** · Version 1.0 · 7 Oct 2026 Author: Divyrajsinh Parmar (Computer Engineering, IITRAM Ahmedabad) · Course: Computer Networks (college project)
+**Version 2.0 · 12 Oct 2026** · Author: Divyrajsinh Parmar (Computer Engineering, IITRAM Ahmedabad) · Course: Computer Networks (college project)
+Companion file: `docs/IMPLEMENTATION_ROADMAP.md` (what is left and how to build it). This file says where the project IS.
 
 ## 0. How to use this document
 
-Give this file to a new AI chat together with this message: *Read this report fully. It is my project history, current state and roadmap. Continue from Section 12 (Next steps). Follow Section 15 on how to talk to me.*
+Give this file and `docs/IMPLEMENTATION_ROADMAP.md` (or simply the repo zip, which contains both) to a new AI chat with this message:
 
-**Status at time of writing:** Week 1 of 8 (environment setup). Gate 1 (real traffic forwarding plus Go/No-Go experiment) is **not yet passed**. The app builds with the real network engine and installs on the phone, and a first fix round (Section 9) was applied but not yet built or tested.
+> Read docs/PROJECT_HANDOFF.md and docs/IMPLEMENTATION_ROADMAP.md fully. They are my project history, current state and plan. Continue with the first unfinished milestone in the roadmap tracker. Follow Section 13 of the handoff on how to talk to me.
 
-## 1. Executive summary
+**After every finished task** the AI must update (a) the change log (Section 15) and any section whose facts changed, (b) the tracker in the roadmap, and re-create the zip. These two files are the single source of truth; copies elsewhere are stale.
 
-Stock Android gives users no way to say which app should win when several apps compete for the same network link (for example a cloud backup running during a video call or an online exam). This project adds a **priority-aware traffic scheduler** to an existing open-source local-VPN traffic shaper (**NetValve**, Apache-2.0). It needs no root and no server.
+## 1. Executive summary and honest status
 
-The idea: put apps into High, Medium and Low tiers. A work-conserving scheduler inside the VPN relay lets Low apps use the whole link when nothing important is happening, and makes them yield immediately when a High app needs the link. Success is measured by the latency of a small probe app (PayProbe) while a simulator app generates heavy load.
+**Idea.** When several apps share one phone link (a cloud backup while a video call, an exam or a game), stock Android gives the user no way to say who wins. We add a **priority scheduler** to the relay of an open-source local-VPN traffic shaper (NetValve, Apache-2.0). High-tier apps get their bytes out first; Low-tier apps still use the whole link when nothing important is active (work-conserving). No root, no server.
 
-**What is already done:** development machine set up, NetValve forked and pinned, repository bugs fixed, native network engine (netstack AAR) built, APK built and installed on a physical OnePlus Nord CE5, first smoke test run.
+| Layer | State |
+|---|---|
+| Development environment (Mac M1, JDK 17, Go, NDK 27, SDK 35) | **done** |
+| Fork pinned at `f7b34b0`; repository defects repaired (Section 8) | **done** |
+| Real network engine (netstack AAR) builds, APK installs and runs on the OnePlus Nord CE5 | **done** |
+| First fix round (usage access, protect(), Dashboard tab, app icons), reported working by the student | **done** |
+| Scheduler algorithm (Mode B core, Mode A rule, calibration maths, tier rules, coroutine adapter) with 36 unit tests | **done, verified on a JVM** |
+| Algorithm-level simulation of all modes (results in Section 10) | **done** |
+| Scheduler wired into the relay (`FlowSupervisor`) and switchable in the app | **not done** (milestone M3) |
+| PayProbe (the measuring app), in-app traffic simulator, tier UI | **not done** (M1, M4, M5) |
+| On-phone measurements and the Go/No-Go decision | **not done** (M2, M6) |
 
-**What is next:** verify the first fix round, run the Week-1 Go/No-Go latency experiment, then follow the 8-week roadmap (Section 11).
+**The one-sentence truth:** the *algorithm* exists and is tested; the *phone does not use it yet*, so there is no on-device evidence that it helps. Everything running on the phone today is NetValve plus our repairs.
 
-## 2. Project aim and feasibility
+## 2. Aim, feasibility and theory
 
-| Item | Detail |
-| --- | --- |
-| Problem | No user-facing control over which app gets bandwidth during contention on stock Android |
-| Goal | Per-app priority tiers (High, Medium, Low, Bypass) with a work-conserving scheduler in a local VPN relay |
-| Method | Fork NetValve, add a priority pacer next to its token-bucket throttle, measure with PayProbe |
-| Budget | Zero (open-source only) |
-| Timeline | 8 weeks, with 3 go/no-go gates |
-| Platform | Android 10+ (API 29+), physical arm64 phone, no root |
-| Language | Kotlin (Go only to build the network-stack library) |
+- **Goal:** per-app tiers (High, Medium, Low; unticked apps stay outside the tunnel = Bypass) and a scheduler inside the VPN relay; measure the effect with a probe app (PayProbe) while a simulator app creates load.
+- **Constraints:** zero budget, root-free, Android 10+ (API 29+), physical arm64 phone, Kotlin (Go only to build the netstack library).
+- **Feasibility:** VpnService is the official root-free way to relay other apps' traffic; `getConnectionOwnerUid` (API 29+) maps connections to apps. The risk is engineering and measurement, not permission.
+- **Theory in one paragraph.** Latency = propagation + transmission + queueing. When total load exceeds the bottleneck capacity, a queue builds in the router, access point or cell scheduler and every app waits in the same FIFO (bufferbloat). If the phone shapes its own traffic to R = 0.9 x measured goodput, the queue forms inside our pacer instead, where we choose the order: High first. A static cap on Low wastes the link while High is idle; a work-conserving scheduler does not.
+- **Cannot do:** change the kernel queue discipline (root), make a router or tower favour us, control traffic that never enters the tunnel (Bypass apps, tethered clients, VoLTE/IMS), prioritise apps that refuse a VPN.
 
-**Feasibility verdict (from the roadmap):** Android does not block this design. VpnService is an official API for intercepting and relaying other apps' traffic, and getConnectionOwnerUid (API 29+) maps connections to apps. The risks are engineering and measurement risks, not permission risks.
+## 3. Positioning and scope decisions
 
-**What will not work (stated up front):** changing the kernel queueing discipline (needs root), making a router or cell tower favour our packets, controlling traffic that never enters the tunnel (excluded apps, tethered clients, VoLTE/IMS), prioritising banking/UPI apps that refuse to run with a VPN.
+1. **VPN must be on** for the scheduler to work. This is a design property (VpnService is the only root-free way) and is stated as a limitation.
+2. **Banking and UPI apps** usually refuse a VPN. They are not a target. The case "video call plus banking app at once" is handled as **Bypass** (banking app outside the tunnel) and the benefit is **indirect**: because R is below link capacity, the shared bottleneck queue stays short. This is scenario S8 and is **unproven** (it also needs the banking app not to detect the VPN when excluded; untested on OxygenOS 16).
+3. **Privacy VPNs (NordVPN style)** cannot run at the same time: Android allows one active VPN and ours is a VPN. Options: (A) document the limit and position the tool as a local alternative for people who want control rather than IP hiding (**chosen working assumption**); (B) future work: put the scheduler inside a WireGuard-style client. Decision to confirm with the course instructor.
+4. **Claims.** Say *local and server-free*. Never say safe, secure or private: the relay forwards bytes unchanged, adds no encryption, hides no IP and does no TLS interception.
+5. **Motivating examples** to use in the report and viva: calls, online exams, games and streaming versus background backup or update. Not banking.
+6. **Open hypothesis.** Whether the benefit is large enough on the real phone is decided by the Go/No-Go experiment (roadmap M2). Until then neither proven nor killed.
 
-**Still unproven until measured:** that forwarding is reliable on this phone, that the high app's latency improves by a useful margin on the real network, and UDP/QUIC attribution on this kernel.
-
-## 3. Core theory (one paragraph)
-
-Latency = propagation + transmission + queueing. When total load exceeds link capacity, a queue builds at the bottleneck (router, access point, cell scheduler) and every app's packets wait in the same FIFO (bufferbloat). If the phone shapes its own traffic to a rate R slightly below real capacity (about 0.9 of measured goodput, as SQM/CAKE routers do), the queue forms inside our pacer instead, where we choose the order: High first. A static cap on Low wastes bandwidth when High is idle; a work-conserving priority scheduler does not.
-
-## 4. Base project and source of all code
+## 4. Base project and code map
 
 | Item | Value |
-| --- | --- |
-| Upstream repository | https://github.com/IEAmir/NetValve (Apache-2.0) |
+|---|---|
+| Upstream | https://github.com/IEAmir/NetValve (Apache-2.0) |
 | Our fork | https://github.com/Divyrajsinh-Parmar/NetValve |
-| Local folder | \~/projects/qos-priority-scheduler (Desktop shortcut exists) |
-| Pinned base commit | **f7b34b0** (Update README.md), git tag **pinned-base** |
-| Working branch | qos-scheduler |
-| Original zip | NetValve-main.zip (kept only as a reference copy; not used for work) |
+| Pinned base commit | `f7b34b0` (tag `pinned-base`); we never track upstream |
+| Local folder | `~/projects/qos-priority-scheduler`, branch `qos-scheduler` |
 
-**What NetValve provides:** per-app shaping through a local VPN, gVisor netstack (a userspace TCP/IP stack, built with gomobile into an AAR), token-bucket pacing in both directions, UDP pacing, DNS exemption, UID attribution, a plugin API, Jetpack Compose UI, Room and DataStore.
+NetValve provides: per-app shaping via a local VPN, gVisor netstack (built by gomobile into `app/libs/netstack.aar`), token-bucket pacing both directions, UDP pacing, DNS exemption, UID attribution with an Unknown fallback, a TrafficModule plugin API, Compose UI, Room and DataStore. The default build uses a **loopback engine that does not forward traffic**; the real engine needs `-Pnetvalve.netstack=true` (arm64 only).
 
-**Key code locations (all under app/src/main/kotlin/dev/netvalve/):**
+Paths under `app/src/main/kotlin/dev/netvalve/`:
 
 | Path | Role |
-| --- | --- |
-| service/NetValveVpnService.kt | The VpnService; builds the TUN, applies the allowed/disallowed app list, acts as the socket protector |
-| network/FlowSupervisor.kt | Relays each TCP/UDP flow; **this is the hook point for our scheduler** |
-| network/ConnectionManager.kt | Opens protected upstream sockets to the real internet |
-| throttle/ | Token buckets and pacing queue (ThrottleManager.bucketFor and pace) |
-| service/TrafficEngine.kt, DeviceStateMonitorImpl.kt | Engine wiring; foreground-app detection via UsageStatsManager |
-| ui/ (apps, dashboard, logs, stats, navigation) | Compose screens |
-| src/netstack/kotlin vs src/loopback/kotlin | Engine implementation, switched by a Gradle flag |
-| netstack/ (Go), netstack/build-aar.sh | Builds app/libs/netstack.aar |
+|---|---|
+| `throttle/ThrottleManager.kt` | `bucketFor(uid, direction)` and `pace(bucket, bytes)`; **the hot path we extend** |
+| `throttle/TokenBucket.kt`, `PacingQueue.kt` | static caps; byte-bounded UDP queue (DROP_OLDEST, 256 KB) |
+| `network/FlowSupervisor.kt` | `relayTcp`: pace before each write (about lines 83-109); `relayUdp`: queue then pace (about 156-190). **Four call sites to route through our pacer** |
+| `network/UidResolver.kt` | attribution with cache, single-app inference, Unknown fallback |
+| `network/ConnectionManager.kt` | protected upstream sockets |
+| `service/NetValveVpnService.kt` | builds the TUN, allowed or disallowed app list, socket protector |
+| `rules/`, `module/` | policy engine and TrafficModule hooks |
+| `data/db`, `data/datastore`, `repository/` | Room (version 1), DataStore settings and app selection (ONLY_SELECTED or ALL_EXCEPT) |
+| `ui/` | Compose screens (apps, dashboard, logs, stats, navigation) |
+| **`scheduler/` (new, ours)** | pure-Kotlin scheduler, see Section 9 |
 
-**Hook point (identified):** in FlowSupervisor.relayTcp, bytes are paced by throttleManager.pace(bucket, n) just before each write to the upstream socket (upload) and before each write to the app side (download). The priority pacer will be placed beside this call. Docs to read for detail: docs/ARCHITECTURE.md, docs/EXTENDING.md, docs/THROTTLING.md.
+Upstream technical docs stay in `docs/` (ARCHITECTURE, EXTENDING, THROTTLING, DEBUG_THROTTLING, LIMITATIONS, BUILD_VERIFICATION, NETSTACK_EVIDENCE). The original README and handoff are in `docs/upstream/`.
 
-**Engine flag:** the default build uses a loopback engine that does NOT forward traffic. The real engine needs the AAR and the Gradle property -Pnetvalve.netstack=true (arm64 only).
+## 5. Development environment
 
-## 5. Development environment (as installed)
+MacBook Air M1 (macOS). Test phone: **OnePlus Nord CE5, OxygenOS 16 (build 16.0.5.1002)**.
 
-**Machine:** MacBook Air M1 (macOS, Apple Silicon). **Test phone:** OnePlus Nord CE5 running OxygenOS 16 (build 16.0.5.1002).
+| Tool | Version | Note |
+|---|---|---|
+| Xcode Command Line Tools | installed | git, compilers (full Xcode not needed) |
+| Homebrew | 6.0.20 | |
+| JDK | Temurin 17.0.20.1 | keep 17; project verified on it |
+| Go | 1.27.1 (`go.mod` needs 1.25+), `GOTOOLCHAIN=auto` | builds the AAR |
+| Android Studio, SDK Platform 35 (plain, no ext), Build-Tools 35.0.0, Platform-Tools 37.0.1 | | |
+| NDK | **27.1.12297006** (27.2 and 30.x also installed; 27.x is the verified family) | |
+| Gradle | 8.10.2 via `./gradlew` | |
 
-| Tool | Version / detail | Why |
-| --- | --- | --- |
-| Xcode Command Line Tools | installed | git and compilers (full Xcode is not needed) |
-| Homebrew | 6.0.20 | installs developer tools |
-| JDK | Temurin 17.0.20.1 (JDK 17 on purpose) | Gradle and Android build; project verified on 17 |
-| Go | 1.27.1 (go.mod needs 1.25+), GOTOOLCHAIN=auto | builds the netstack AAR |
-| gomobile and gobind | installed by build-aar.sh | binds Go to Android (AAR) |
-| Android Studio | Apple-silicon build | SDK manager and IDE |
-| Android SDK Platform | 35 (plain Android 15, no ext variants) | project compileSdk is 35 |
-| Build-Tools | 35.0.0 (36.0.0 and 37.0.0 also present) | matches project |
-| NDK | **27.1.12297006** (27.2 and 30.x also present; 27.x is the verified one) | required by gomobile |
-| Platform-Tools (adb) | 37.0.1 | phone install and logs |
-| Gradle | 8.10.2 (downloaded by ./gradlew) | build |
-
-Environment variables in \~/.zshrc:
+`~/.zshrc`:
 
 ```bash
 export JAVA_HOME=$(/usr/libexec/java_home -v 17)
@@ -98,184 +98,145 @@ export PATH=$PATH:$ANDROID_HOME/platform-tools:$(go env GOPATH)/bin
 export GOTOOLCHAIN=auto
 ```
 
-The project also needs a local file local.properties containing: sdk.dir=/Users/divyrajsinh/Library/Android/sdk
+`local.properties` (not committed): `sdk.dir=/Users/divyrajsinh/Library/Android/sdk`
+Commands: `./gradlew test` · `./gradlew :app:assembleDebug -Pnetvalve.netstack=true` · `adb install -r app/build/outputs/apk/debug/app-debug.apk` · `adb logcat -d | grep -i netvalve`.
+`gradle.properties` was retuned for a laptop (4 GB heap, daemon and parallel on). If a build runs out of memory: `git checkout pinned-base -- gradle.properties`.
 
-**Note:** the repo's gradle.properties is tuned for a 4 GB machine (single JVM, no daemon, no parallel, no incremental compile), so builds are slower than they need to be. Optional tweak on this Mac: raise -Xmx and set org.gradle.parallel=true.
+## 6. Repository state and the package audit (12 Oct 2026)
 
-## 6. Repository state and git history
+The zip the student shared was **246 MB**: Finder had zipped `app/build` (230 MB), `.gradle`, `.kotlin`, `__MACOSX` and `.DS_Store`. The working tree was clean at commit `511c0de`. The cleaned package is about 13 MB including git history.
 
 | Commit or tag | Meaning |
-| --- | --- |
-| f7b34b0 / tag pinned-base | Upstream state we forked from |
-| a482a91 | Restored missing AndroidManifest.xml and resources; fixed .gitignore; made gradlew and build-aar.sh executable |
-| ea5f537 / tag week1-aar-built | Added app/libs/netstack.aar (3.9 MB), fixed build-aar.sh for macOS, updated go.mod and go.sum |
-| Uncommitted (applied, not yet built) | First fix round: 5 files, see Section 9 |
+|---|---|
+| `f7b34b0` / `pinned-base` | upstream state we forked |
+| `a482a91` | restored manifest and resources, fixed `.gitignore`, executable scripts |
+| `ea5f537` / `week1-aar-built` | netstack AAR, macOS fix in `build-aar.sh`, go.mod and go.sum |
+| `511c0de` | first fix round and the v1 handoff report |
+| **staged, not committed (this package)** | cleanup, scheduler core, simulator, docs, build tuning |
 
-After the fix round builds and is tested, commit it (suggested message: Fix usage-access permission, protect(), navigation, app icons) and tag the end of the week.
+Cleanup done: removed `README.fa.md`, `publish-to-github.sh` and the duplicate root `PROJECT_HANDOFF.md`; moved upstream `README.md`, `HANDOFF.md` and screenshots to `docs/upstream/`; new short `README.md`; new `NOTICE.md` (attribution and every changed file); `.gitignore` gained `.kotlin/` and `__MACOSX/`.
+To commit: `git add -A && git commit -m "Cleanup, scheduler core with tests and simulator, docs v2"` then `git tag scheduler-core`.
+**When zipping on the Mac use the terminal command in Section 7, not Finder.**
 
-## 7. Setup and build log (what was done, in order)
+## 7. Setup and build log, and how to adopt this package
 
-1. Installed command line tools, Homebrew, JDK 17, Go and Git; verified versions.
-2. Installed Android Studio; in SDK Manager selected only Android 15 (API 35) plus Build-Tools 35.0.0, NDK 27.x and Platform-Tools.
-3. Set environment variables (Section 5).
-4. Forked IEAmir/NetValve, cloned to \~/projects/qos-priority-scheduler, created branch qos-scheduler and tag pinned-base.
-5. Wrote local.properties; made gradlew executable (chmod +x); first Gradle build failed because AndroidManifest.xml was missing (Section 8, issue 2); restored it; build succeeded (loopback engine).
-6. Ran netstack/build-aar.sh; fixed its macOS host check (issue 4); AAR produced.
-7. Built the real-engine APK: ./gradlew :app:assembleDebug -Pnetvalve.netstack=true (BUILD SUCCESSFUL; libgojni.so packaged).
-8. Authorized the OnePlus Nord CE5 for adb (issue 5), installed the APK, ran the first smoke test.
+History (condensed): installed tools and SDK pieces; forked and pinned; `chmod +x` on scripts; first build failed on the missing manifest (Section 8, issue 2); built the AAR after the macOS fix; built the real-engine APK; authorised the phone for adb; installed; smoke test; fixed four reported problems.
 
-Handy commands:
+**Adopt this package (also roadmap M0):**
 
 ```bash
-cd ~/projects/qos-priority-scheduler
+cd ~/projects && mv qos-priority-scheduler qos-priority-scheduler.old
+unzip ~/Downloads/qos-priority-scheduler-v2.zip -d ~/projects
+cd qos-priority-scheduler
+echo "sdk.dir=$ANDROID_HOME" > local.properties
+./gradlew test
 ./gradlew :app:assembleDebug -Pnetvalve.netstack=true
-adb devices
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb logcat -d | grep -i netvalve > ~/Desktop/netvalve-log.txt
+git add -A && git commit -m "Cleanup, scheduler core with tests and simulator, docs v2"
+```
+
+**Make a clean zip (never Finder):**
+
+```bash
+cd ~/projects
+zip -r ~/Desktop/qos-priority-scheduler.zip qos-priority-scheduler -x "*/.gradle/*" "*/build/*" "*/.kotlin/*" "*/.idea/*" "*/local.properties" "*.DS_Store"
 ```
 
 ## 8. Problems found and how they were solved
 
 | # | Problem | Cause | Resolution |
-| --- | --- | --- | --- |
-| 1 | zsh: permission denied: ./gradlew | Executable bit lost in the upload | chmod +x gradlew netstack/build-aar.sh (committed) |
-| 2 | Build failed: AndroidManifest.xml does not exist | Upstream .gitignore contains the line \*.xml, so the manifest and ALL resource XML files were never uploaded | Removed that .gitignore line; recreated AndroidManifest.xml, res/values/strings.xml and res/drawable/ic\_stat\_shield.xml from what the Kotlin code expects (a documented deviation from upstream, record it in NOTICE.md) |
-| 3 | SDK Manager offered newer Build-Tools and NDK | Android Studio defaults to latest | Installed the verified versions (Build-Tools 35.0.0, NDK 27.1) and pointed ANDROID\_NDK\_HOME at 27.1 |
-| 4 | build-aar.sh failed: gvisor rawfile build constraints exclude all Go files | The script's host compile check ran for macOS; gVisor packages are Linux/Android only | Changed the check to GOOS=linux GOARCH=arm64 CGO\_ENABLED=0 (committed) |
-| 5 | adb devices showed unauthorized | Phone had not trusted the Mac | Revoke USB debugging authorizations, toggle USB debugging, unplug and replug with screen unlocked, accept the Allow USB debugging popup; if needed use Wireless debugging as plan B |
-| 6 | Gradle build very slow | gradle.properties tuned for 4 GB CI | Be patient or raise memory and enable parallel (optional) |
+|---|---|---|---|
+| 1 | `permission denied: ./gradlew` | executable bit lost in upload | `chmod +x` (committed) |
+| 2 | build: AndroidManifest.xml missing | upstream `.gitignore` contained `*.xml`, so the manifest and all resource XML were never uploaded | removed the line; recreated manifest and two resource files from what the code references (documented in `NOTICE.md`) |
+| 3 | SDK Manager offered newer Build-Tools and NDK | defaults are latest | installed verified versions (Build-Tools 35.0.0, NDK 27.1) |
+| 4 | `build-aar.sh`: gvisor rawfile build constraints | host check compiled for macOS; gVisor packages are Linux/Android only | check now uses `GOOS=linux GOARCH=arm64 CGO_ENABLED=0` |
+| 5 | adb `unauthorized` on OnePlus | phone had not trusted the Mac | revoke authorisations, toggle USB debugging, replug unlocked, accept popup (Wireless debugging as plan B) |
+| 6 | very slow Gradle builds | `gradle.properties` tuned for a 4 GB CI box | retuned for the laptop |
+| 7 | Usage access list showed only system services | our recreated manifest omitted `PACKAGE_USAGE_STATS` | permission added |
+| 8 | log: `protect() failed` for TCP | **hypothesis:** `java.net.Socket` creates its fd lazily, so `protect()` saw no valid fd | `bind` before `protect()`; student reports it works; confirm in logs when convenient |
+| 9 | Dashboard tab dead after visiting Apps | bottom-bar navigation back to the start destination | `switchTab` helper |
+| 10 | no app icons, confusing checkboxes | icons never loaded; meaning of a tick depends on selection mode | real icons, explanatory line, Tick all and Clear all |
+| 11 | **round-robin was unfair** (one flow got 8 MB, another 0.6 MB in the same tier) | a tiny floor grant used up a flow's turn | fixed in `PriorityPacerCore.serve`; found by the new unit tests |
 
-## 9. Changes made on top of upstream (for NOTICE.md)
+## 9. What we built: the scheduler (package `dev.netvalve.scheduler`)
 
-**Committed:** .gitignore (removed \*.xml); gradlew and netstack/build-aar.sh (executable, host check fixed); netstack/go.mod and go.sum (tidy); new AndroidManifest.xml and two resource files; app/libs/netstack.aar (built artifact, force-added).
+Pure Kotlin, no Android imports, deterministic (injected clock), so it is testable in milliseconds.
 
-**First fix round (applied locally, build and test pending)** after the first smoke test showed four problems:
+| File | Purpose |
+|---|---|
+| `SchedulerModel.kt` | `Tier` (HIGH, MEDIUM, LOW; max 3 High apps), `SchedMode` (OFF, ADAPTIVE_THROTTLE, PRIORITY_PACER), `SchedulerConfig` (validated parameters, one per direction) |
+| `PriorityPacerCore.kt` | **Mode B** state machine: floors, strict priority, caps while High is active, round-robin per tier, capped banked budget |
+| `AdaptiveThrottle.kt` | **Mode A** rule: while High moved bytes in the last `holdMs`, cap Medium and Low at alpha x R |
+| `CalibratorMath.kt` | R = 0.9 x steady goodput after discarding the slow-start window |
+| `SchedulerPacer.kt` | coroutine adapter: `acquire(tier, flowId, lane, bytes)` suspends until granted; one pump per lane; sleeps when idle; removes a cancelled request |
+| `TierAssignments.kt` | tier rules: max 3 High (locked entries count), locked entries, default Medium, shared-UID takes the highest tier, snapshot for persistence |
 
-| Observed on the phone | Cause | Change |
-| --- | --- | --- |
-| Usage access cannot be granted; only two unrelated system services appear in the list | Our recreated manifest omitted the PACKAGE\_USAGE\_STATS permission, so Android did not list NetValve | Added the permission to AndroidManifest.xml (certain) |
-| Logs show protect() failed for TCP flows | **Hypothesis, unverified:** java.net.Socket creates its OS socket lazily, so protect() has no valid file descriptor | ConnectionManager.connectTcp now binds the socket before calling protect() |
-| Dashboard tab does not respond after visiting Apps or its Manage apps button | Bottom-bar navigation back to the start destination did not work in that flow | Navigation.kt: new switchTab helper (pop back to Dashboard); Apps tab also stays highlighted on app detail |
-| No app icons; selection checkbox unclear | Icons were never loaded (letter avatar only); meaning of the tick depends on selection mode | AppsScreen.kt shows real icons, an explanatory line, and Tick all / Clear all; AppSelectionViewModel.kt adds selectionMode and setAllShown, and sets pendingRestart before saving |
+**Parameters (defaults):** tick 10 ms, grant 4096 B, hold 2000 ms, alphaMedium 0.50, alphaLow 0.20, floorMedium 0.10, floorLow 0.05.
 
-The five files: AndroidManifest.xml, ConnectionManager.kt, AppSelectionViewModel.kt, AppsScreen.kt, Navigation.kt. These changes were checked for patch consistency only; they have not been compiled yet.
+**Mode B per tick:** (1) budget = min(carry + R x dt, 2 x R x tick); (2) floors for waiting Medium and Low; (3) strict priority for the rest: High, Medium, Low, round-robin across flows, at most one grant per turn; (4) while High is active Medium is capped at 50 percent and Low at 20 percent of R, otherwise no caps; (5) leftover is carried but never beyond the cap. Expected extra delay for High is about tick + grant/R plus kernel-buffer residue (to be measured, not assumed).
 
-## 10. Current status and test results
+**Tests (new, 36):** `PriorityPacerCoreTest` (work conservation, rate limit, strict priority shares, no starvation over 60 simulated seconds, floors ablation, caps only while High active, no caps after hold, grant size, round-robin fairness, banked-budget cap, in-place rate change, cancel, High overtakes saturating Low), `SchedulerSupportTest`, `TierAssignmentsTest`, `SchedulerPacerTest` (real-time, generous tolerances), `SchedulerSimulationTest`. Existing upstream suites: 7.
 
-| Check | Result |
-| --- | --- |
-| Loopback build | Success |
-| Real-engine build (netstack AAR) | Success (APK about 58 MB) |
-| Install on OnePlus Nord CE5 | Success, no install error |
-| First smoke test | Most features appear functional; usage access not granted (cause above); protect() failed log lines for TCP; Dashboard tab bug; no app icons |
-| Real forwarding verified for Chrome, YouTube, WhatsApp | **Not yet confirmed** (needs re-test after the fix round) |
-| Gate 1 | Not passed |
+## 10. Results so far (simulation, not the phone)
 
-## 11. Roadmap (from the project plan)
+**Model.** One 5 Mbps bottleneck with a 256 KB FIFO (about 410 ms of queue), base RTT 20 ms. A High app sends a 1.4 KB request every 200 ms in 10 s bursts separated by 10 s of silence; Low is three greedy downloads. R = 0.9 x link. Simplifications: no TCP back-off (the standing queue is what matters), measured High requests are never dropped (this *understates* unscheduled latency). Reproduce: `./gradlew test` prints the tables; CSV in `docs/data/sim_results.csv`.
 
-**Scheduler design.** Tiers 0=High, 1=Medium, 2=Low; unattributed flows are treated as Medium; Bypass apps never enter the tunnel. Tick 10 ms, grant size 4 KB, separate pacer per direction. Rate R = 0.9 x measured goodput (calibration) or a fixed demo rate.
+**S1, latency of the High request (ms) and Low goodput:**
 
-- **Mode OFF:** no scheduling (baseline).
-- **Mode A, adaptive throttle:** reactive; throttle Low when High is active; 2 s hold prevents flapping.
-- **Mode B, shared priority pacer (core contribution):** every tick, floors first (Medium 10 percent, Low 5 percent of the budget), then strict priority High then Medium then Low, round-robin across flows in a tier; while High is active Medium is capped at 50 percent and Low at 20 percent of R; when High is idle there are no caps (work-conserving). High tier holds at most 3 apps. UDP uses the same pacer with a bounded tail-drop queue; DNS stays exempt.
-- Upstream sockets get modest buffers (about 64 KB) so queues do not hide in the kernel.
+| Config | p50 | p95 | p99 / max | Low goodput | Low while High idle |
+|---|---|---|---|---|---|
+| C1 scheduling OFF | 440 | 441 | 441 / 441 | 622 kB/s | 625 kB/s |
+| C2 static cap R/5 | 23 | 23 | 23 / 23 | 113 kB/s | 113 kB/s |
+| C3 Mode A | 23 | 23 | **441 / 441** | 331 kB/s | 533 kB/s |
+| **C4 Mode B** | **23** | **23** | **23 / 23** | 297 kB/s | **482 kB/s** |
 
-**New components to build:** scheduler package (SchedulerConfig, TierResolver, AdaptiveThrottle, PriorityPacer, Calibrator) with JVM unit tests and a discrete-event simulator; tier and Bypass UI with Room storage; Congestion Simulator (Low app); **PayProbe** companion app (separate APK and UID, High tier, 1 s HTTPS probes, CSV and broadcast); dashboard with latency graph and CSV export; experiment runner.
+**S4 (High never sends):** C4 Low goodput 562 kB/s = **100 percent of R** and 90 percent of the unscheduled link (the roadmap's expected 10 percent cost); C2 only 113 kB/s.
+**S5 (High saturates the link):** Low still gets 28.9 kB/s (**5.1 percent of R**) with floors, but 1.0 kB/s (0.2 percent) without them.
 
-**Timeline**
+**What this supports (at model level only):**
+1. Without scheduling, a High request waits behind the full queue (bufferbloat, about 440 ms). Mode B keeps it at the idle-link value (23 ms).
+2. A static cap gives the same latency but throws the link away: Low gets 113 kB/s even while High is idle, versus 482 to 562 kB/s with Mode B. This is the main novelty claim versus the static caps NetValve already has.
+3. Mode A is reactive: typical latency is fine but the first request after an idle period meets the queue Low built (p99 and max 441 ms). Mode B has no such spike.
+4. The hold time costs idle-window throughput: Low reaches 86 percent of R in the High-idle windows of S1 because it is still capped for 2 s after High stops.
+5. Floors are what prevent starvation (C4 versus C5).
 
-| Week | Work | Gate |
-| --- | --- | --- |
-| 1 | Setup, real forwarding, hook point, Go/No-Go experiment | Gate 1 |
-| 2 | Attribution checks (TCP/UDP share), PayProbe v0, baselines C0/C1, endpoint verification, Bypass test | Gate 2 |
-| 3 | Scheduler core in pure Kotlin, JVM tests, simulator, Room and TierResolver | tests green |
-| 4 | Tier/Bypass UI, Mode A on device | Mode A helps in S1 |
-| 5 | Mode B both directions, calibration, socket tuning | Mode B works in S1 and S2 |
-| 6 | Simulator app, dashboard, PayProbe broadcast, CSV export, runner; feature freeze | Gate 3 |
-| 7 | Full evaluation protocol, edge cases F1-F15, 1-hour stability, battery comparison | data collected |
-| 8 | Analysis, report, README and NOTICE, demo rehearsal, backup video | submission ready |
+**What it does NOT show:** any behaviour of the real phone, WiFi, cellular, TCP dynamics, kernel buffers or downlink lag. Those are the job of milestones M2 and M6. If the phone shows a weak effect, these simulation results remain the algorithm contribution (Plan C is already substantially met).
 
-**Week-1 Go/No-Go experiment (no new code):** run 3-4 parallel downloads in one app; in another app time a tiny HTTPS request every 500 ms for 60 s and record p50 and p95; then apply a manual cap of about 20 percent of link speed to the downloader and repeat. If p95 drops about 2x or better: GO. If barely changes: try uploads, a phone hotspot or fixed-rate mode. If forwarding is unstable or the AAR will not build after a focused effort: Plan C.
+**Verification status.** Verified in a sandbox with Kotlin 2.0.21, JUnit 4.13.2, JDK 21 and the coroutines jar shipped in the Kotlin distribution: all 36 tests pass and the scheduler sources compile with warnings as errors. **Not verified:** the Gradle and Android build of the whole app (Hilt, KSP, Compose), the 7 upstream suites under Gradle, Room, and anything on the phone. The first action after adopting this package is `./gradlew test` and an APK build (roadmap M0).
 
-**Evaluation configurations:** C0 no VPN, C1 VPN with scheduling off, C2 static cap on Low, C3 Mode A, C4 Mode B, C5 Mode B without floors, C6 Low app paused (ideal bound). **Scenarios:** S1 downlink contention, S2 uplink, S3 both, S4 High idle (work conservation), S5 10-minute run (starvation check), S6 real app as heavy flow, S7 WiFi to mobile switch, S8 PayProbe bypassed. Each 60 s with at least 5 repeats on a network we control (own router or phone hotspot, not college WiFi).
+## 11. Remaining work (summary; details in the roadmap)
 
-**Success criteria (fixed before testing):** (1) in S1-S3, C4 p95 at most 50 percent of C1 p95 in at least 4 of 5 runs; (2) in S4, C4 Low goodput at least 85 percent of R and clearly above C2; (3) no scheduler-caused starvation in S5; (4) at least 95 percent of bytes attributed to a real UID; (5) one-hour run without crash.
+M0 adopt and verify · M1 PayProbe · M2 Go/No-Go experiment · M3 wire the scheduler into the relay · M4 tier UI · M5 in-app traffic simulator · M6 evaluation on the phone · M7 optional stretch (on-device calibration, Mode A on device, graph, automation) · M8 report, viva, demo. The fast path is M0, M1, M2, M3, M4, M5, M6, M8.
 
-**Fallbacks:** Plan B is Mode A only on device. Plan C (if forwarding is unreliable by Gate 2) is the algorithm plus discrete-event simulation plus partial prototype.
+## 12. Risks and limitations to remember
 
-**Cut list (drop in order):** drag-between-sections, battery depth, runner automation, Quick Settings tile, Mode A (if Mode B works), scenarios S6-S8.
+- One VPN at a time; starting ours revokes another; Android 16 (our phone runs OxygenOS 16): stop the VPN before reinstalling the APK or the internet can break until restart.
+- Only tunnelled traffic is controlled; congestion caused by other people can only be softened by lowering our own load.
+- A wrong R removes the benefit; control costs about 10 percent peak throughput plus CPU and battery.
+- No AQM (no CoDel-style drop); TCP is controlled by back-pressure; downlink control is indirect and lags.
+- UDP and QUIC attribution depends on kernel support; the base is young with a single maintainer (pinned fork).
+- OnePlus quirks: adb authorisation popup; if installs complain about permissions try Developer options, Disable permission monitoring.
+- A fixed-R demo can look rigged: also show calibrated mode, a real-app scenario (S6) and the paused-app bound (C6).
 
-## 12. Next steps (start here)
+## 13. Instructions for the AI reading this
 
-1. Build and install the fixed code: ./gradlew :app:assembleDebug -Pnetvalve.netstack=true, then adb install -r.
-2. On the phone: turn OFF usage access for the two unrelated system services; grant usage access to NetValve; check Dashboard tab, app icons, Tick all and Clear all; in Logs confirm protect() failed no longer appears.
-3. If the log line persists, collect one full line plus adb logcat output and re-diagnose (the bind fix is a hypothesis).
-4. Commit the fix round and tag the week.
-5. Smoke test: Chrome, YouTube, WhatsApp through the tunnel with per-app throughput visible. Record network type and signal; phone details are in Section 5.
-6. Run the Go/No-Go experiment (Section 11) and record p50 and p95 numbers. Decide GO, GO with fixed rate, or Plan C.
-7. Read docs/ARCHITECTURE.md, EXTENDING.md and THROTTLING.md and confirm the hook point and whether our own app and PayProbe are inside the routed set.
-8. Begin Week 2 tasks (attribution share, PayProbe v0, baselines).
-
-## 13. Risks and limitations to remember
-
-- Only one VPN at a time; starting another VPN revokes ours. Some apps (banking, UPI) dislike VPNs and are out of scope.
-- We control only tunnelled traffic and only help when the congestion is caused by our own device.
-- Wrong R removes the benefit; control costs about 10 percent peak throughput plus CPU and battery.
-- No AQM (no CoDel-style early drop); TCP is controlled by back-pressure.
-- UDP/QUIC attribution depends on kernel support; the base is young (single maintainer), hence the pinned fork.
-- Android 16: after updating a VPN app while the VPN is active, internet can break; always stop the VPN before reinstalling the APK (our phone runs OxygenOS 16, so this applies to us).
-- OnePlus quirks: adb authorization popups, and a Disable permission monitoring toggle may be needed if installs complain about permissions.
-- Fixed-rate demo mode can look rigged; also show calibrated mode, the real-app scenario S6 and the paused bound C6.
+- The student is a **beginner**. Give small numbered copy-paste steps, one stage at a time, and ask for the output before moving on.
+- Explain ideas in **Hinglish, told like a short story or analogy**, then give exact commands.
+- Verify claims against the actual code; say clearly when something is a hypothesis or untested.
+- New logic goes in `dev.netvalve.scheduler` (pure Kotlin, tested). Never rewrite the relay or the netstack. Keep upstream edits tiny and list them in `NOTICE.md`.
+- Do not use `removeFirst()` or `removeLast()` on `MutableList` or `java.util` collections (on JDK 21 they bind to Java methods missing on older Android). `kotlin.collections.ArrayDeque` is fine.
+- Ask for the full error text (Gradle: the "What went wrong" block). Stay honest about limits.
+- Machine: MacBook Air M1, folder `~/projects/qos-priority-scheduler`, phone OnePlus Nord CE5 (OxygenOS 16).
 
 ## 14. Glossary
 
-- **VpnService:** official Android API for a local VPN that sees and relays other apps' traffic.
-- **Netstack (gVisor):** a TCP/IP stack in user space, used to terminate app connections inside the app.
-- **AAR:** an Android library archive; netstack.aar is built from Go with gomobile.
-- **Token bucket / pacing:** allows bytes at a set rate; the base uses it for per-app caps.
-- **Work-conserving:** never leaves capacity idle if someone has data waiting.
-- **Bufferbloat:** large queues at a bottleneck that add delay.
-- **UID:** Android's per-app identity; priority is per UID, hence two APKs (main app and PayProbe).
-- **Pinned commit:** a fixed upstream version so the base cannot change under us.
+**VpnService** official API for a local VPN · **netstack (gVisor)** user-space TCP/IP stack · **AAR** Android library archive built from Go by gomobile · **token bucket** allows bytes at a set rate · **work-conserving** never leaves capacity idle while someone waits · **bufferbloat** large queues that add delay · **UID** Android's per-app identity (priority is per UID, hence a separate PayProbe APK) · **Bypass** app left outside the tunnel · **pinned commit** fixed upstream version · **floor** guaranteed minimum share · **hold** time a High app still counts as active.
 
-## 15. Instructions for the AI assistant reading this
+## 15. Change log
 
-- The student is a **beginner**. Give small, numbered, copy-paste steps, one stage at a time, and ask for the output before moving on.
-- Explain concepts in **Hinglish**, told like a short story or analogy, then give exact commands.
-- Verify claims against the actual code or docs; say clearly when something is a hypothesis or untested (for example the protect() diagnosis).
-- Keep new logic in framework-free Kotlin with JVM unit tests; never rewrite the relay; list every modified upstream file in NOTICE.md.
-- Machine: MacBook Air M1; project folder: \~/projects/qos-priority-scheduler; phone: OnePlus Nord CE5 (OxygenOS 16, build 16.0.5.1002).
-- Ask for error text (the What went wrong section for Gradle) rather than guessing.
-
-## 16. Scope question raised on 7 Oct 2026 (open, decision pending)
-
-**Concern (from the student):** banking and UPI apps usually refuse to run while a VPN is on, so a user who needs them must switch the VPN off, which returns the phone to its normal state. The student therefore doubts that the problem exists and wants the hypothesis and assumptions re-examined.
-
-**Assessment so far:**
-
-- The banking case is a real weakness as a *motivating example*. It was already listed as out of scope (Sections 2 and 13), but it should not be used to justify the project in the report or the viva.
-- It does not remove the underlying problem. Bandwidth contention (a backup or update starving a video call, online exam or game) exists with the VPN off. The VPN is only the mechanism that lets a normal app see and order other apps' traffic.
-- The cost is real: the user must keep our VPN on to get control, and must pause it or mark the banking app as Bypass when needed. Whether a Bypass app actually avoids VPN detection on OxygenOS 16 is **untested** (roadmap Week-2 check).
-- Whether the benefit is large enough to matter is exactly what the Week-1 Go/No-Go experiment measures. Until that result exists, the hypothesis is neither proven nor killed.
-
-**Options:** (A) keep the project and reframe the problem statement around latency-sensitive apps such as calls, exams, games and streaming, with PayProbe as a stand-in probe rather than a payment app; (B) keep it but make the Go/No-Go result the explicit deciding test; (C) pivot the topic. Recommended: A and B together. Record the final decision here.
-
-**Scenario refinement (student, 7 Oct 2026):** the user is on a video call while also using a banking or UPI app, and the banking app must stay responsive. Two constraints shape the answer. Android allows only one VPN at a time, so a separate third-party VPN cannot run together with ours. A banking app that refuses a VPN has to be marked Bypass, which means it is **not prioritised directly** by our scheduler. The workable design is: the video call and background apps inside our tunnel, the banking app in Bypass, and the tunnel rate R kept below link capacity so the shared bottleneck queue stays short and the bypassed banking request is not stuck behind bulk data. This is scenario S8 and it is **unproven**. It also assumes the banking app does not detect the VPN when it is excluded (untested on OxygenOS 16). PayProbe should therefore be tested two ways: High tier inside the tunnel (S1-S3) and Bypass (S8).
-
-**Privacy-VPN scenario (student, 7 Oct 2026):** professionals commonly keep a commercial privacy VPN (for example NordVPN) on all the time, and the student wants our tool to work in that situation. **As designed it cannot run at the same time as another VPN app.** Android allows one active VPN, and our scheduler is itself a VPN service, so starting ours revokes theirs (risk R11 in the roadmap). Our relay also sends traffic out through the real network, so it does not hide the user's IP the way a privacy VPN does; it only keeps data on the device (no server). Banking apps are usually handled in privacy VPNs by split tunnelling, which is the same idea as our Bypass list. Options: (A) accept and document this limit, and position the tool as a local alternative to a privacy VPN for people who want control rather than IP hiding (recommended for the 8-week scope); (B) future work: put the scheduler inside a VPN client that can carry the user's own tunnel (for example a WireGuard-based client), which is a large separate effort and depends on the provider allowing its own configuration to be used. Decision pending.
-
-**Positioning rules (7 Oct 2026):** (1) Our VPN must be on for the scheduler to work. This is a design property, because VpnService is the only root-free way to see and order other apps' traffic, and it is stated as a limitation rather than hidden. (2) Do not claim that the app makes the user safe or private. It forwards bytes as they are: no encryption is added, no IP address is hidden and no TLS is intercepted. The honest claim is that it runs on the device with no server, so traffic is not handed to a third-party VPN company, and that the open-source base (Apache-2.0) lets the code be checked. Say local and server-free, not secure.
-
-## 17. Change log
-
-This section is updated after every project change.
-
-| Date | Change | Sections touched |
-| --- | --- | --- |
-| 7 Oct 2026 | Report created from the setup session | all |
-| 7 Oct 2026 | Phone recorded as OnePlus Nord CE5, OxygenOS 16 (build 16.0.5.1002); Android 16 VPN-update risk marked as applying | 5, 12, 13, 15 |
-| 7 Oct 2026 | Scope question about banking and UPI apps recorded; decision pending | 16, 17 |
-| 7 Oct 2026 | Scenario refined: video call plus banking app at once; banking app handled as Bypass; S8 becomes a key test | 16, 17 |
-| 7 Oct 2026 | Privacy-VPN (NordVPN-style) scenario recorded: cannot coexist with our VPN; options A and B, decision pending | 16, 17 |
-| 7 Oct 2026 | Positioning rules added: VPN must be on (stated limitation); no safe or private claims | 16, 17 |
-| 7 Oct 2026 | Handoff package defined: this report saved as docs/PROJECT\_HANDOFF.md inside the repo, and the whole repo (with git history and the built AAR) zipped from the Mac | 0, 17 |
+| Date | Change | Sections |
+|---|---|---|
+| 7 Oct 2026 | v1.0 created from the setup session; phone recorded; scope questions (banking, privacy VPN) and positioning rules recorded | all |
+| 7 Oct 2026 | First fix round built and reported working (usage access, protect(), Dashboard tab, app icons) | 8, 10 |
+| 12 Oct 2026 | **v2.0.** Package audited (246 MB to 13 MB); upstream clutter removed or moved; NOTICE.md and new README; `gradle.properties` retuned | 6, 7 |
+| 12 Oct 2026 | Scheduler core (Mode B, Mode A rule, calibration maths, coroutine adapter, tier rules) written and verified with 36 JVM tests; fairness bug found and fixed | 9, 8 |
+| 12 Oct 2026 | Bottleneck simulation of C1 to C5 added; results recorded; roadmap rewritten as dependency-ordered milestones (no calendar weeks) | 10, 11 |

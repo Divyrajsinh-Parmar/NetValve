@@ -1,0 +1,13 @@
+scenario,config,label,high_samples,p50_ms,p95_ms,p99_ms,max_ms,low_goodput_kBps,low_goodput_high_idle_kBps,low_pct_of_R,high_bulk_kBps
+S1,C1,"VPN on, scheduling OFF",150,440,441,441,441,621.5,624.7,110.5,0.0
+S1,C2,"Static cap on Low (R/5)",150,23,23,23,23,112.5,112.5,20.0,0.0
+S1,C3,"Mode A adaptive throttle",150,23,23,441,441,331.3,532.8,58.9,0.0
+S1,C4,"Mode B priority pacer",150,23,23,23,23,297.3,482.1,52.9,0.0
+S1,C5,"Mode B without floors",150,23,23,23,23,297.3,482.1,52.9,0.0
+S4,C1,"VPN on, scheduling OFF",0,0,0,0,0,625.0,625.0,111.1,0.0
+S4,C2,"Static cap on Low (R/5)",0,0,0,0,0,112.5,112.5,20.0,0.0
+S4,C3,"Mode A adaptive throttle",0,0,0,0,0,625.0,625.0,111.1,0.0
+S4,C4,"Mode B priority pacer",0,0,0,0,0,562.5,562.5,100.0,0.0
+S4,C5,"Mode B without floors",0,0,0,0,0,562.5,562.5,100.0,0.0
+S5,C4,"Mode B priority pacer",0,0,0,0,0,28.9,0.0,5.1,533.6
+S5,C5,"Mode B without floors",0,0,0,0,0,1.0,0.0,0.2,561.5
