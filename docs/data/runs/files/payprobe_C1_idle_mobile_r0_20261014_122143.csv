@@ -1,0 +1,4 @@
+iso_time,elapsed_ms,latency_ms,ok,http_code,label,note
+2026-10-14T06:51:43.747Z,2,5000,0,-1,C1_idle_mobile_r0,timeout
+2026-10-14T06:51:48.765Z,5020,5000,0,-1,C1_idle_mobile_r0,timeout
+2026-10-14T06:51:53.792Z,10047,5000,0,-1,C1_idle_mobile_r0,timeout

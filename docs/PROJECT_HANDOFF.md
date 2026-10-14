@@ -24,7 +24,8 @@ Give this file and `docs/IMPLEMENTATION_ROADMAP.md` (or simply the repo zip, whi
 | Scheduler algorithm (Mode B core, Mode A rule, calibration maths, tier rules, coroutine adapter) with 36 unit tests | **done, verified on a JVM** |
 | Algorithm-level simulation of all modes (results in Section 10) | **done** |
 | Scheduler wired into the relay (`FlowSupervisor`) and switchable in the app | **not done** (milestone M3) |
-| PayProbe (the measuring app), in-app traffic simulator, tier UI | **not done** (M1, M4, M5) |
+| PayProbe v0: separate module `payprobe/` (probe loop, CSV, live numbers, chart) plus `analysis/summarize.py` | **code done and compile-checked, 9 JVM tests pass; not yet run on the phone** (M1) |
+| In-app traffic simulator, tier UI | **not done** (M4, M5) |
 | On-phone measurements and the Go/No-Go decision | **not done** (M2, M6) |
 
 **The one-sentence truth:** the *algorithm* exists and is tested; the *phone does not use it yet*, so there is no on-device evidence that it helps. Everything running on the phone today is NetValve plus our repairs.
@@ -71,6 +72,8 @@ Paths under `app/src/main/kotlin/dev/netvalve/`:
 | `data/db`, `data/datastore`, `repository/` | Room (version 1), DataStore settings and app selection (ONLY_SELECTED or ALL_EXCEPT) |
 | `ui/` | Compose screens (apps, dashboard, logs, stats, navigation) |
 | **`scheduler/` (new, ours)** | pure-Kotlin scheduler, see Section 9 |
+| **`payprobe/` (new, ours, separate module and APK)** | the measuring app: `Prober` (fresh HTTPS GET, whole-transaction timeout), `ProbeService` (foreground loop), `CsvSink`, `ProbeStats`, `ChartView`, `MainActivity` (code-built UI, no Compose, no libraries) |
+| **`analysis/summarize.py` (new, ours)** | median, p95, p99, max, failures from PayProbe CSVs (standard library only) |
 
 Upstream technical docs stay in `docs/` (ARCHITECTURE, EXTENDING, THROTTLING, DEBUG_THROTTLING, LIMITATIONS, BUILD_VERIFICATION, NETSTACK_EVIDENCE). The original README and handoff are in `docs/upstream/`.
 
@@ -114,6 +117,8 @@ The zip the student shared was **246 MB**: Finder had zipped `app/build` (230 MB
 | `511c0de` | first fix round and the v1 handoff report |
 | `3df8724` / `scheduler-core` | cleanup, scheduler core, simulator, docs v2, build tuning |
 | `5e49d1c` | docs: project now lives in ~/Downloads/qos-priority-scheduler |
+| `40ec79d` | M0 done: handoff and tracker updated |
+| **next commit (M1)** | PayProbe module, analysis script, docs |
 
 Cleanup done: removed `README.fa.md`, `publish-to-github.sh` and the duplicate root `PROJECT_HANDOFF.md`; moved upstream `README.md`, `HANDOFF.md` and screenshots to `docs/upstream/`; new short `README.md`; new `NOTICE.md` (attribution and every changed file); `.gitignore` gained `.kotlin/` and `__MACOSX/`.
 Committed on 12 Oct 2026.
@@ -156,6 +161,7 @@ zip -r ~/Desktop/qos-priority-scheduler.zip qos-priority-scheduler -x "*/.gradle
 | 8 | log: `protect() failed` for TCP | **hypothesis:** `java.net.Socket` creates its fd lazily, so `protect()` saw no valid fd | `bind` before `protect()`; student reports it works; confirm in logs when convenient |
 | 9 | Dashboard tab dead after visiting Apps | bottom-bar navigation back to the start destination | `switchTab` helper |
 | 10 | no app icons, confusing checkboxes | icons never loaded; meaning of a tick depends on selection mode | real icons, explanatory line, Tick all and Clear all |
+| 12 | PayProbe closed immediately after tapping the icon | `window.insetsController` was called in `onCreate` **before** `setContentView`; the decor view does not exist yet, so Android threw a NullPointerException (`MainActivity.kt:50`). Compiling and JVM tests cannot catch this | call moved after `setContentView` and wrapped in `runCatching`; found with `adb logcat -b crash -d` |
 | 11 | **round-robin was unfair** (one flow got 8 MB, another 0.6 MB in the same tier) | a tiny floor grant used up a flow's turn | fixed in `PriorityPacerCore.serve`; found by the new unit tests |
 
 ## 9. What we built: the scheduler (package `dev.netvalve.scheduler`)
@@ -202,11 +208,13 @@ Pure Kotlin, no Android imports, deterministic (injected clock), so it is testab
 
 **What it does NOT show:** any behaviour of the real phone, WiFi, cellular, TCP dynamics, kernel buffers or downlink lag. Those are the job of milestones M2 and M6. If the phone shows a weak effect, these simulation results remain the algorithm contribution (Plan C is already substantially met).
 
-**Verification status.** Verified in a sandbox with Kotlin 2.0.21, JUnit 4.13.2, JDK 21 and the coroutines jar shipped in the Kotlin distribution: all 36 tests pass and the scheduler sources compile with warnings as errors. **Also verified on the Mac (12 Oct 2026, milestone M0):** `./gradlew test` and the real-engine APK build succeed, and all 36 new tests pass under Gradle. **Not verified:** anything on the phone.
+**Verification status.** Verified in a sandbox with Kotlin 2.0.21, JUnit 4.13.2, JDK 21 and the coroutines jar shipped in the Kotlin distribution: all 36 tests pass and the scheduler sources compile with warnings as errors. **PayProbe (12 Oct 2026):** all Kotlin sources compile against the Android API 35 `android.jar`; 9 JVM tests pass, including probes against a local HTTP server (204, 500, refused connection, a hung server cut off at the timeout and stored as the cap), CSV escaping and flushing, and the percentile maths. The Gradle build of `payprobe` succeeded on the Mac. The first run on the phone crashed on start (problem 12 in Section 8, now fixed); the 5-minute acceptance run is still pending.
+
+**Also verified on the Mac (12 Oct 2026, milestone M0):** `./gradlew test` and the real-engine APK build succeed, and all 36 new tests pass under Gradle. **Not verified:** anything on the phone.
 
 ## 11. Remaining work (summary; details in the roadmap)
 
-M0 adopt and verify · M1 PayProbe · M2 Go/No-Go experiment · M3 wire the scheduler into the relay · M4 tier UI · M5 in-app traffic simulator · M6 evaluation on the phone · M7 optional stretch (on-device calibration, Mode A on device, graph, automation) · M8 report, viva, demo. The fast path is M0, M1, M2, M3, M4, M5, M6, M8.
+M0 adopt and verify (done) · M1 PayProbe (code done, phone check pending) · M2 Go/No-Go experiment · M3 wire the scheduler into the relay · M4 tier UI · M5 in-app traffic simulator · M6 evaluation on the phone · M7 optional stretch (on-device calibration, Mode A on device, graph, automation) · M8 report, viva, demo. The fast path is M0, M1, M2, M3, M4, M5, M6, M8.
 
 ## 12. Risks and limitations to remember
 
@@ -242,3 +250,5 @@ M0 adopt and verify · M1 PayProbe · M2 Go/No-Go experiment · M3 wire the sche
 | 12 Oct 2026 | Scheduler core (Mode B, Mode A rule, calibration maths, coroutine adapter, tier rules) written and verified with 36 JVM tests; fairness bug found and fixed | 9, 8 |
 | 12 Oct 2026 | Bottleneck simulation of C1 to C5 added; results recorded; roadmap rewritten as dependency-ordered milestones (no calendar weeks) | 10, 11 |
 | 12 Oct 2026 | **M0 done.** Package adopted at ~/Downloads/qos-priority-scheduler; 36 scheduler tests pass under Gradle; committed (3df8724, tag scheduler-core); old folders removed | 6, 10 |
+| 12 Oct 2026 | **M1 code written.** `payprobe/` module (separate APK `dev.netvalve.payprobe`), CSV format, `analysis/summarize.py`; compile-checked against android.jar API 35, 9 JVM tests pass; phone run pending | 1, 4, 6, 10, 11 |
+| 13 Oct 2026 | PayProbe first-launch crash found on the phone (insets controller used before `setContentView`) and fixed; lesson recorded: always read `adb logcat -b crash` after a first on-device run | 8, 10 |

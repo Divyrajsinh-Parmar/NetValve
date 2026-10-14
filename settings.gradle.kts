@@ -24,3 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "NetValve"
 include(":app")
+include(":payprobe")

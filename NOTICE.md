@@ -32,6 +32,11 @@ The original README and developer handoff are kept for reference in `docs/upstre
 bottleneck simulator in `app/src/test/kotlin/dev/netvalve/scheduler/`.
 Simulation output: `docs/data/`.
 
+### New module and tools
+`payprobe/` (separate Gradle module and APK, our own code, no upstream code) and
+`analysis/summarize.py`. The only upstream file touched for this is `settings.gradle.kts`
+(one line: `include(":payprobe")`).
+
 ### Removed from the repository root
 `README.fa.md` (Persian translation), `publish-to-github.sh` (upstream publishing helper),
 `HANDOFF.md` and `README.md` (moved to `docs/upstream/`), duplicate `PROJECT_HANDOFF.md`.

@@ -75,6 +75,8 @@ Build: new Gradle module `:payprobe` (add to `settings.gradle.kts`), `applicatio
 Done when: a 5-minute run gives a CSV that `adb pull` retrieves, the graph moves, and p50/p95 match a spreadsheet check of the CSV.
 Note: PayProbe must be **ticked in NetValve's Apps list** (ONLY_SELECTED mode) to go through the tunnel. A run with VPN off is configuration C0.
 
+**Status (13 Oct 2026): builds with Gradle; first launch crashed (insets controller before `setContentView`), fixed; phone acceptance pending.** Files: `payprobe/build.gradle.kts`, `payprobe/src/main/AndroidManifest.xml`, and under `payprobe/src/main/kotlin/dev/netvalve/payprobe/`: `Prober.kt`, `ProbeService.kt`, `ProbeState.kt`, `ProbeStats.kt`, `CsvFormat.kt` (also holds `CsvSink`), `ChartView.kt`, `MainActivity.kt`, `ProbeModels.kt`; tests in `payprobe/src/test/`. Build and install: `./gradlew :payprobe:assembleDebug` then `adb install -r payprobe/build/outputs/apk/debug/payprobe-debug.apk`. Fetch results: `adb pull /sdcard/Android/data/dev.netvalve.payprobe/files/ docs/data/runs/` then `python3 analysis/summarize.py docs/data/runs/`. PayProbe is locked to the High tier in `TierAssignments` by its package name. Default probe URL `https://connectivitycheck.gstatic.com/generate_204`. The system DNS cache still applies (as for any app), so after the first probe the DNS part is small.
+
 ### M2. Go/No-Go experiment (no new code)
 
 Goal: decide whether the idea pays off on this phone.
@@ -161,7 +163,7 @@ Mode and parameters: handoff Section 9 (tick 10 ms, grant 4096 B, hold 2000 ms, 
 | Milestone | Name | Status | Date | Notes |
 |---|---|---|---|---|
 | M0 | Adopt package and verify | done | 12 Oct 2026 | 36 new tests pass under Gradle; commit 3df8724, tag scheduler-core |
-| M1 | PayProbe v0 | not started | | |
+| M1 | PayProbe v0 | code done, phone check pending | 12 Oct 2026 | compile-checked; 9 JVM tests; run the 5-minute acceptance on the phone |
 | M2 | Go/No-Go experiment | not started | | |
 | M3 | Wire scheduler into relay | not started | | |
 | M4 | Tier UI | not started | | |
