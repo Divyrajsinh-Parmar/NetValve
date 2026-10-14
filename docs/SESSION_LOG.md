@@ -103,3 +103,29 @@ One entry per working session, oldest first. This file answers three questions: 
 1. Run `./tools/session_start_check.sh` and write the Entry check.
 2. Paste the idle-run table (C1, C0, C1) and decide whether VPN overhead is measurable.
 3. Move on to M2: speed test, R, load runs.
+
+## Session 6: 14 Oct 2026, GitHub push, WiFi idle baselines, finish tool
+**Goal:** put the work on GitHub, redo the idle baselines (C1, C0, C1) on WiFi with a real VPN-off run, and make sure every change updates the docs and GitHub.
+**Entry check:** HEAD was `c34fc5f` (14 ok, 4 warnings: branch not on GitHub, two tiny CSVs, no C0 run). GitHub afterwards showed the same commit `c34fc5f`, 18 commits, 5 tags (screenshot). The start-of-session check was not re-run after the push.
+**Done (with evidence):**
+- Branch `qos-scheduler` and 5 tags pushed to `Divyrajsinh-Parmar/NetValve` (terminal output: new branch, 5 new tags; GitHub page shows `c34fc5f`). `main` untouched.
+- Idle baselines on WiFi, three runs of about 3 minutes (3 CSVs in `docs/data/idle_wifi/files/`, listed on the phone and summarised by `analysis/summarize.py`): C1 r1 p50 193 / p95 334; C0 r1 p50 214 / p95 276; C1 r2 p50 202 / p95 268 (handoff Section 10.2). Result: no measurable VPN overhead at idle; WiFi p95 noise about 66 ms.
+- Problem 14 (missing C0 run) closed with `C0_idle_wifi_r1`.
+- `tools/finish_session.sh`: commit and push in one command, refuses if the session log or (for code changes) the handoff is not part of the change; tested against a local test remote.
+**Claimed, not verified:** the exact setup of the three runs (only PayProbe ticked, mobile data off, VPN key icon gone for C0) was instructed but not confirmed in the chat; the first 10 samples of each run (skipped by the summary) were not inspected for timeouts.
+**Decisions:** VPN overhead is only stated as "not measurable" until M6 gives at least 5 runs per condition; load runs will use the same WiFi.
+**Problems:** problem 13 (first probes timing out) not seen again after the first 10 samples; stays open until the first samples are checked.
+**Handoff state:**
+- HEAD at end: c34fc5f (the commit that adds this entry and the WiFi data follows it)
+- Tags: pinned-base, week1-aar-built, scheduler-core, m1-payprobe-done, m2-idle-baselines-mobile
+- Tree clean: after `./tools/finish_session.sh`
+**Open at end:**
+- M2: measure link speed, set R = 0.9 x downlink; choose and test the load source (3 to 4 parallel downloads); load runs (a) no control and (b) static cap on the downloader, at least 5 repeats each; write the GO or No-Go decision in the handoff.
+- Record WiFi name, band and signal for the load runs.
+- Decide what "old project removal" means for the GitHub fork (default branch versus deleting anything); nothing was deleted.
+- Review the untouched docs (`ARCHITECTURE`, `LIMITATIONS`, `THROTTLING` and so on) for stale statements.
+- M3 to M8 not started: the scheduler is not connected to the relay.
+**Next session, first steps:**
+1. Run `./tools/session_start_check.sh` and write the Entry check.
+2. Link speed test on the same WiFi, then set R.
+3. Pick the load source and do one trial load run before the 5 repeats.

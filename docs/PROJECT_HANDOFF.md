@@ -26,8 +26,9 @@ Give this file and `docs/IMPLEMENTATION_ROADMAP.md` (or simply the repo zip, whi
 | Scheduler wired into the relay (`FlowSupervisor`) and switchable in the app | **not done** (milestone M3) |
 | PayProbe v0: separate module `payprobe/` (probe loop, CSV, live numbers, chart) plus `analysis/summarize.py` | **done (M1, 14 Oct 2026): 9 JVM tests pass, runs on the phone, CSVs come off with `adb pull` and are summarised by the script** |
 | In-app traffic simulator, tier UI | **not done** (M4, M5) |
-| Idle baselines on mobile data (three VPN-on runs) | **done, 14 Oct 2026** (Section 10) |
-| VPN-off baseline (C0), load runs and the Go/No-Go decision | **not done** (M2 in progress; M6 later) |
+| Idle baselines on mobile data (three VPN-on runs) | **done, 14 Oct 2026** (Section 10.1) |
+| Idle baselines on WiFi (C1, C0, C1) | **done, 14 Oct 2026** (Section 10.2) |
+| Link speed and R, load runs and the Go/No-Go decision | **not done** (M2 in progress; M6 later) |
 
 **The one-sentence truth:** the *algorithm* exists and is tested; the *phone does not use it yet*, so there is no on-device evidence that it helps. Everything running on the phone today is NetValve plus our repairs.
 
@@ -120,7 +121,9 @@ The zip the student shared was **246 MB**: Finder had zipped `app/build` (230 MB
 | `5e49d1c` | docs: project now lives in ~/Downloads/qos-priority-scheduler |
 | `40ec79d` | M0 done: handoff and tracker updated |
 | `4e1b6da` / `m2-idle-baselines-mobile` | PayProbe module, `analysis/summarize.py`, first idle CSVs. (The tag name says M2, but the docs of that commit still described M1 as pending; fixed in the next commit.) |
-| **next commit** | docs brought in line with the code; idle baselines redone |
+| `c9c102b` | docs brought in line with the code; mobile idle runs archived |
+| `c34fc5f` | session log and start-of-session check added; branch and tags pushed to GitHub |
+| **next commit** | WiFi idle baselines (C1, C0, C1), `finish_session.sh`, Session 6 entry |
 
 Cleanup done: removed `README.fa.md`, `publish-to-github.sh` and the duplicate root `PROJECT_HANDOFF.md`; moved upstream `README.md`, `HANDOFF.md` and screenshots to `docs/upstream/`; new short `README.md`; new `NOTICE.md` (attribution and every changed file); `.gitignore` gained `.kotlin/` and `__MACOSX/`.
 Committed on 12 Oct 2026.
@@ -165,8 +168,8 @@ zip -r ~/Desktop/qos-priority-scheduler.zip qos-priority-scheduler -x "*/.gradle
 | 10 | no app icons, confusing checkboxes | icons never loaded; meaning of a tick depends on selection mode | real icons, explanatory line, Tick all and Clear all |
 | 12 | PayProbe closed immediately after tapping the icon | `window.insetsController` was called in `onCreate` **before** `setContentView`; the decor view does not exist yet, so Android threw a NullPointerException (`MainActivity.kt:50`). Compiling and JVM tests cannot catch this | call moved after `setContentView` and wrapped in `runCatching`; found with `adb logcat -b crash -d` |
 | 11 | **round-robin was unfair** (one flow got 8 MB, another 0.6 MB in the same tier) | a tiny floor grant used up a flow's turn | fixed in `PriorityPacerCore.serve`; found by the new unit tests |
-| 13 | First probes after pressing Start sometimes all time out (two 3-row CSVs of 5000 ms rows) | Hypothesis: the tunnel was not usable yet. Procedure now: start the VPN, wait about 10 seconds, then Start PayProbe; if the first rows are timeouts, Stop and redo the run under a new label | open, to be confirmed |
-| 14 | The VPN-off (C0) idle run is missing from the data; two files labelled C1 were reported as C0 | C0 is repeated; check the VPN key icon is gone before pressing Start, and put C0 or C1 in the label | open |
+| 13 | First probes after pressing Start sometimes all time out (two 3-row CSVs of 5000 ms rows) | Hypothesis: the tunnel was not usable yet. Procedure now: start the VPN, wait about 10 seconds, then Start PayProbe; if the first rows are timeouts, Stop and redo the run under a new label | open; not seen in the three WiFi runs (0 failures after the first 10 samples; the first 10 samples were not inspected) |
+| 14 | The VPN-off (C0) idle run is missing from the data; two files labelled C1 were reported as C0 | C0 is repeated; check the VPN key icon is gone before pressing Start, and put C0 or C1 in the label | **closed 14 Oct 2026:** C0 run recorded (`C0_idle_wifi_r1`) |
 
 ## 9. What we built: the scheduler (package `dev.netvalve.scheduler`)
 
@@ -231,9 +234,21 @@ Reading: (1) these are **three runs in the same condition (VPN on, idle)**, and 
 
 Data hygiene found while checking the CSVs: two 3-row files (`C1_idle_mobile_r0`, and a second `C1_idle_mobile_r1`) contain only 5000 ms timeouts, from starts where the tunnel was probably not ready yet (hypothesis, not confirmed). `--skip 10` hides them, but they are kept out of future analysis. These runs live in `docs/data/` (mobile-data folder) as noise-floor evidence; the baselines are being redone on the network that the load runs will use.
 
+### 10.2 Idle baselines on WiFi (14 Oct 2026, phone, no load)
+
+Setup as instructed: WiFi on, mobile data off, phone untouched, 3 minutes each, first 10 samples skipped, only PayProbe ticked in NetValve; VPN on for C1 and off for C0 (the student was asked to confirm the VPN key icon was gone for C0). WiFi name, band and signal were not recorded in the repo. Files: `docs/data/idle_wifi/files/`. Values in ms:
+
+| Run | VPN | n | fails | p50 | p95 | p99 | max | mean |
+|---|---|---|---|---|---|---|---|---|
+| `C1_idle_wifi_r1` | on | 173 | 0 | 193 | 334 | 1164 | 1548 | 219 |
+| `C0_idle_wifi_r1` | off | 172 | 0 | 214 | 276 | 366 | 401 | 215 |
+| `C1_idle_wifi_r2` | on | 172 | 0 | 202 | 268 | 419 | 423 | 205 |
+
+Reading: (1) **No sign that the tunnel adds latency at idle.** The VPN-on medians (193 and 202) are 12 to 21 ms *lower* than the single VPN-off median (214), but the two VPN-on runs differ from each other by 9 ms and the means are close (215 versus 219 and 205). This is not evidence that the VPN is faster; with one C0 run the honest statement is "no measurable overhead". This replaces point (3) of Section 10.1 (no C0 run existed then). The overhead gets a proper number in M6, with at least 5 runs per condition. (2) **Noise floor on WiFi:** two identical VPN-on runs differ by 66 ms at p95 (268 versus 334) and one run has a short slow patch (p99 1164, max 1548). Medians spread by about 21 ms. A later effect must be far larger than that, must use medians over at least 5 runs, and must not rely on p99 or max. (3) WiFi did not give a lower median than mobile data in these runs (mobile 200 to 208, WiFi 193 to 214); the probe is a fresh HTTPS request to a remote server every second, so the whole transaction time, not only the local link, is measured.
+
 ## 11. Remaining work (summary; details in the roadmap)
 
-M0 adopt and verify (done) · M1 PayProbe (done) · M2 Go/No-Go experiment (in progress: idle baselines being redone, VPN-off run and load runs pending) · M3 wire the scheduler into the relay · M4 tier UI · M5 in-app traffic simulator · M6 evaluation on the phone · M7 optional stretch (on-device calibration, Mode A on device, graph, automation) · M8 report, viva, demo. The fast path is M0, M1, M2, M3, M4, M5, M6, M8.
+M0 adopt and verify (done) · M1 PayProbe (done) · M2 Go/No-Go experiment (in progress: idle baselines done on mobile data and WiFi; link speed, R and load runs pending) · M3 wire the scheduler into the relay · M4 tier UI · M5 in-app traffic simulator · M6 evaluation on the phone · M7 optional stretch (on-device calibration, Mode A on device, graph, automation) · M8 report, viva, demo. The fast path is M0, M1, M2, M3, M4, M5, M6, M8.
 
 ## 12. Risks and limitations to remember
 
@@ -274,3 +289,5 @@ M0 adopt and verify (done) · M1 PayProbe (done) · M2 Go/No-Go experiment (in p
 | 14 Oct 2026 | **M1 done.** PayProbe runs on the phone; first smoke run and idle runs on mobile data recorded; commit `4e1b6da` | 8, 10 |
 | 14 Oct 2026 | Data check found no VPN-off (C0) run and two junk files; docs and code reconciled; idle baselines to be redone; M2 started | 8, 10, 11 |
 | 14 Oct 2026 | Session log (`docs/SESSION_LOG.md`) and start-of-session check (`tools/session_start_check.sh`) introduced; sessions 1 to 5 reconstructed from git history | 0, 15 |
+| 14 Oct 2026 | Branch `qos-scheduler` and 5 tags pushed to GitHub (`c34fc5f`); `tools/finish_session.sh` added (commit and push only if session log and handoff are updated) | 6, 15 |
+| 14 Oct 2026 | **Idle baselines on WiFi (C1, C0, C1) recorded:** no measurable VPN overhead at idle; WiFi p95 noise about 66 ms; problem 14 closed | 8, 10, 11 |
