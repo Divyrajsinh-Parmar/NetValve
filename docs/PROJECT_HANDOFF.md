@@ -9,7 +9,7 @@ Give this file and `docs/IMPLEMENTATION_ROADMAP.md` (or simply the repo zip, whi
 
 > Read docs/PROJECT_HANDOFF.md and docs/IMPLEMENTATION_ROADMAP.md fully. They are my project history, current state and plan. Continue with the first unfinished milestone in the roadmap tracker. Follow Section 13 of the handoff on how to talk to me.
 
-**After every finished task** the AI must update (a) the change log (Section 15) and any section whose facts changed, (b) the tracker in the roadmap, and re-create the zip. These two files are the single source of truth; copies elsewhere are stale.
+**After every finished task** the AI must update (a) the change log (Section 15) and any section whose facts changed, (b) the tracker in the roadmap, and re-create the zip. These two files are the single source of truth; copies elsewhere are stale. A third file, `docs/SESSION_LOG.md`, records what each session did and what proves it. **At the start of every session run `./tools/session_start_check.sh`** and compare it with the last log entry; at the end add a new entry.
 
 ## 1. Executive summary and honest status
 
@@ -273,3 +273,4 @@ M0 adopt and verify (done) · M1 PayProbe (done) · M2 Go/No-Go experiment (in p
 | 13 Oct 2026 | PayProbe first-launch crash found on the phone (insets controller used before `setContentView`) and fixed; lesson recorded: always read `adb logcat -b crash` after a first on-device run | 8, 10 |
 | 14 Oct 2026 | **M1 done.** PayProbe runs on the phone; first smoke run and idle runs on mobile data recorded; commit `4e1b6da` | 8, 10 |
 | 14 Oct 2026 | Data check found no VPN-off (C0) run and two junk files; docs and code reconciled; idle baselines to be redone; M2 started | 8, 10, 11 |
+| 14 Oct 2026 | Session log (`docs/SESSION_LOG.md`) and start-of-session check (`tools/session_start_check.sh`) introduced; sessions 1 to 5 reconstructed from git history | 0, 15 |

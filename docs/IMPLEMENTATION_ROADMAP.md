@@ -42,6 +42,7 @@ M7 stretch items can be done any time after M3.
 4. **Update `docs/PROJECT_HANDOFF.md`:** status table (Section 1), results (Section 10), problems (Section 8), change log (Section 15).
 5. Tick the tracker (Section 9 below).
 6. Re-create the zip with the terminal command from handoff Section 7 (never Finder).
+7. Add the session entry to `docs/SESSION_LOG.md` (every "done" with evidence) and commit it together with the work. At the start of the next session run `./tools/session_start_check.sh` first.
 
 ## 4. Verified code facts you will need
 
