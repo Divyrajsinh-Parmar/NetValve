@@ -32,8 +32,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## Status
 
-Setup, repairs, the verified scheduler core and the PayProbe measuring app (`payprobe/`, code written,
-phone check pending) exist. The scheduler is **not yet wired into the relay**. See the roadmap.
+Setup, repairs, the verified scheduler core and the PayProbe measuring app (`payprobe/`, verified on the phone)
+exist; the first idle latency baselines are recorded and being repeated. The scheduler is **not yet wired into the relay**. See the roadmap.
 
 PayProbe: `./gradlew :payprobe:assembleDebug`, then `adb install -r payprobe/build/outputs/apk/debug/payprobe-debug.apk`.
 Summarise its CSVs with `python3 analysis/summarize.py <folder>`.

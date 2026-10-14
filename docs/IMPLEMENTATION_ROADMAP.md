@@ -75,7 +75,7 @@ Build: new Gradle module `:payprobe` (add to `settings.gradle.kts`), `applicatio
 Done when: a 5-minute run gives a CSV that `adb pull` retrieves, the graph moves, and p50/p95 match a spreadsheet check of the CSV.
 Note: PayProbe must be **ticked in NetValve's Apps list** (ONLY_SELECTED mode) to go through the tunnel. A run with VPN off is configuration C0.
 
-**Status (13 Oct 2026): builds with Gradle; first launch crashed (insets controller before `setContentView`), fixed; phone acceptance pending.** Files: `payprobe/build.gradle.kts`, `payprobe/src/main/AndroidManifest.xml`, and under `payprobe/src/main/kotlin/dev/netvalve/payprobe/`: `Prober.kt`, `ProbeService.kt`, `ProbeState.kt`, `ProbeStats.kt`, `CsvFormat.kt` (also holds `CsvSink`), `ChartView.kt`, `MainActivity.kt`, `ProbeModels.kt`; tests in `payprobe/src/test/`. Build and install: `./gradlew :payprobe:assembleDebug` then `adb install -r payprobe/build/outputs/apk/debug/payprobe-debug.apk`. Fetch results: `adb pull /sdcard/Android/data/dev.netvalve.payprobe/files/ docs/data/runs/` then `python3 analysis/summarize.py docs/data/runs/`. PayProbe is locked to the High tier in `TierAssignments` by its package name. Default probe URL `https://connectivitycheck.gstatic.com/generate_204`. The system DNS cache still applies (as for any app), so after the first probe the DNS part is small.
+**Status (14 Oct 2026): DONE on the phone.** Builds with Gradle; the first launch crashed (insets controller before `setContentView`) and was fixed; after that, runs of 3 to 4 minutes wrote CSVs that `adb pull` retrieves and `analysis/summarize.py` reads. The CSV has one extra column, `note` (exception name or `timeout`, empty on success). Files: `payprobe/build.gradle.kts`, `payprobe/src/main/AndroidManifest.xml`, and under `payprobe/src/main/kotlin/dev/netvalve/payprobe/`: `Prober.kt`, `ProbeService.kt`, `ProbeState.kt`, `ProbeStats.kt`, `CsvFormat.kt` (also holds `CsvSink`), `ChartView.kt`, `MainActivity.kt`, `ProbeModels.kt`; tests in `payprobe/src/test/`. Build and install: `./gradlew :payprobe:assembleDebug` then `adb install -r payprobe/build/outputs/apk/debug/payprobe-debug.apk`. Fetch results: `adb pull /sdcard/Android/data/dev.netvalve.payprobe/files/ docs/data/runs/` then `python3 analysis/summarize.py docs/data/runs/`. PayProbe is locked to the High tier in `TierAssignments` by its package name. Default probe URL `https://connectivitycheck.gstatic.com/generate_204`. The system DNS cache still applies (as for any app), so after the first probe the DNS part is small.
 
 ### M2. Go/No-Go experiment (no new code)
 
@@ -85,6 +85,8 @@ Setup: own router or phone hotspot, not college WiFi. Same place and time of day
 2. **Load:** 3 to 4 parallel large downloads from one app, for example Chrome tabs or a download manager, or Termux (from F-Droid) with parallel `curl -o /dev/null <large file URL>` jobs. Use a large test file you verify is reachable (for example Cloudflare's `https://speed.cloudflare.com/__down?bytes=100000000` or a Hetzner speed-test file).
 3. **Runs of 60 s each, at least 5 repeats:** (a) VPN on, no control, load on, PayProbe running; (b) the same with NetValve's existing static cap on the downloader at about 20 percent of the link (per-app limit in the app's detail screen).
 Decision on PayProbe p95: about 2x lower or better in (b) than (a) means **GO**. Barely changes: try uploads, the hotspot, or a lower cap; if an effect appears, GO with fixed R as the primary demo and report calibrated results honestly. Forwarding unstable or builds failing after a focused effort: fallback (Section 8).
+**Progress (14 Oct 2026).** Three VPN-on idle runs on mobile data are recorded (handoff Section 10.1): p50 200 to 208 ms and p95 246 to 350 ms, so effects smaller than about 100 ms at p95 cannot be claimed. No VPN-off (C0) run exists yet, so VPN overhead is not measured. Next: repeat C1, C0, C1 idle on the network the load runs will use (own WiFi or hotspot), then load with no control (C1), then load with the static cap on the downloader (C2). Use at least 5 runs per condition and medians. Procedure: start the VPN, wait about 10 seconds, then Start PayProbe; put C0 or C1 and the network in the label.
+
 Done when: both CSV sets are in `docs/data/`, the table (median, p95, max, timeouts) is in the handoff, and the decision is written down.
 
 ### M3. Wire the scheduler into the relay (the core engineering step)
@@ -163,8 +165,8 @@ Mode and parameters: handoff Section 9 (tick 10 ms, grant 4096 B, hold 2000 ms, 
 | Milestone | Name | Status | Date | Notes |
 |---|---|---|---|---|
 | M0 | Adopt package and verify | done | 12 Oct 2026 | 36 new tests pass under Gradle; commit 3df8724, tag scheduler-core |
-| M1 | PayProbe v0 | code done, phone check pending | 12 Oct 2026 | compile-checked; 9 JVM tests; run the 5-minute acceptance on the phone |
-| M2 | Go/No-Go experiment | not started | | |
+| M1 | PayProbe v0 | done | 14 Oct 2026 | 9 JVM tests; runs on the phone; CSV pull and summary work; commit 4e1b6da |
+| M2 | Go/No-Go experiment | in progress | 14 Oct 2026 | three VPN-on idle runs recorded on mobile data (noise floor about 100 ms at p95); VPN-off C0 missing, being redone; load runs pending |
 | M3 | Wire scheduler into relay | not started | | |
 | M4 | Tier UI | not started | | |
 | M5 | In-app traffic simulator | not started | | |
