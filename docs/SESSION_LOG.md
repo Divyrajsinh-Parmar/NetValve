@@ -129,3 +129,35 @@ One entry per working session, oldest first. This file answers three questions: 
 1. Run `./tools/session_start_check.sh` and write the Entry check.
 2. Link speed test on the same WiFi, then set R.
 3. Pick the load source and do one trial load run before the 5 repeats.
+
+## Session 7: 14 Oct 2026, entry check, data re-verified, start of the M2 load experiment
+**Goal:** reconcile the start-of-session check with Session 6, then start M2 (WiFi link speed, R = 0.9 x downlink, load runs).
+**Entry check:** `./tools/session_start_check.sh` (quick mode) gave 18 ok, 2 warnings. HEAD `478f4cd`, tree clean, `origin/qos-scheduler` equals HEAD (this compares the local tracking ref; it is not a live query of GitHub). The last logged commit `c34fc5f` is in the history; two commits came after it: `fb03ca0` (finish tool) and `478f4cd` (WiFi runs and the Session 6 entry). Both warnings are the two 3-row files `C1_idle_mobile_r0_20261014_122143.csv` and `C1_idle_mobile_r1_20261014_122201.csv`: each holds three 5000 ms `timeout` rows over about 10 s. They were already described in Session 5 and handoff 10.1, so there is no new warning. Section 7 (tests and builds) is absent from the output because `--full` was not used.
+**Done (with evidence):** (checked by the AI on a copy of the zip; the student's Mac and phone were not observed)
+- Handoff tables 10.1 and 10.2 recomputed from the CSVs with `analysis/summarize.py --skip 10`: every n, p50, p95, p99, max and mean matches.
+- Problem 13, first 10 samples: in all three WiFi files they are `ok=1` (first sample 393, 241 and 306 ms). The only timeouts in the repo are in the two 3-row mobile files.
+- Test counts: 36 `@Test` in the five scheduler test files (13 + 5 + 6 + 5 + 7) and 9 in `PayProbeCoreTest.kt`.
+- `FlowSupervisor.kt` does not use the scheduler; its four `throttleManager.pace` calls are at lines 95, 109, 180 and 190 (M3 not started).
+- Git: `origin/qos-scheduler` = `478f4cd`, `origin/main` = `f7b34b0` (main untouched); 18 commits up to `c34fc5f`, as Session 6 recorded.
+- `tools/finish_session.sh` tested on a copy with a local bare remote: nothing changed gives exit 0; code without the session log gives STOP; code and log without the handoff gives STOP; all three together commit and push. Limit: it checks that the docs files are part of the change, not that their content is right.
+**Claimed, not verified:**
+- Setup of the three WiFi runs (only PayProbe ticked, mobile data off, VPN key icon gone for C0): not visible in the CSVs.
+- Which WiFi the runs used (own router, hotspot or college) and its name, band and signal: not recorded.
+- M1 acceptance: the roadmap asked for a 5-minute run; the longest file is 243 s (`payprobe_test_20261014_115708.csv`), the idle runs are 180 to 196 s. The on-screen p50 and p95 versus the CSV, and the moving chart, were not recorded.
+- Test passes: the last Gradle test output is from Session 3 (36 tests, M0); the 9 PayProbe tests were run in a sandbox on 12 Oct; no `--full` run since.
+- Problem 8 (`protect()` fix) rests on the student's report only. The Session 6 GitHub screenshot is not in the repo and the remote tags were not checked.
+**Decisions:** none new.
+**Problems:** (a) `summarize.py --by label` without `--skip 10` pools the two 3-row files into `C1_idle_mobile_r1` (384 rows, 3 failures, max 5000 ms); rule added to handoff 10.1. (b) Handoff Section 6 still said "next commit" for `478f4cd`; corrected. (c) Tag `m1-payprobe-done` points to `c9c102b` (docs commit), the PayProbe code is `4e1b6da`; recorded, not an error.
+**Handoff state:**
+- HEAD at end: 478f4cd (the commit that adds this entry follows it)
+- Tags: pinned-base, week1-aar-built, scheduler-core, m1-payprobe-done, m2-idle-baselines-mobile
+- Tree clean: after `./tools/finish_session.sh`
+**Open at end:**
+- M2: record WiFi name, band and signal; measure link speed on that WiFi and set R = 0.9 x downlink; choose and test the load source (3 to 4 parallel downloads); load runs (a) no control and (b) static cap on the downloader, at least 5 repeats each; write the GO or No-Go decision in the handoff.
+- Run `./tools/session_start_check.sh --full` once to get Gradle test and build evidence for M0 and M1.
+- Decide what "old project removal" means for the GitHub fork (default branch versus deleting anything); nothing was deleted.
+- Review the untouched docs (`ARCHITECTURE`, `LIMITATIONS`, `THROTTLING` and so on) for stale statements.
+- M3 to M8 not started: the scheduler is not connected to the relay.
+**Next session, first steps:**
+1. Run `./tools/session_start_check.sh` and write the Entry check.
+2. Continue M2 from the first item under Open at end.

@@ -121,9 +121,10 @@ The zip the student shared was **246 MB**: Finder had zipped `app/build` (230 MB
 | `5e49d1c` | docs: project now lives in ~/Downloads/qos-priority-scheduler |
 | `40ec79d` | M0 done: handoff and tracker updated |
 | `4e1b6da` / `m2-idle-baselines-mobile` | PayProbe module, `analysis/summarize.py`, first idle CSVs. (The tag name says M2, but the docs of that commit still described M1 as pending; fixed in the next commit.) |
-| `c9c102b` | docs brought in line with the code; mobile idle runs archived |
+| `c9c102b` | docs brought in line with the code; mobile idle runs archived (tag `m1-payprobe-done` points here, not at the PayProbe code commit `4e1b6da`) |
 | `c34fc5f` | session log and start-of-session check added; branch and tags pushed to GitHub |
-| **next commit** | WiFi idle baselines (C1, C0, C1), `finish_session.sh`, Session 6 entry |
+| `fb03ca0` | `tools/finish_session.sh` added |
+| `478f4cd` | WiFi idle baselines (C1, C0, C1), Session 6 entry; pushed to GitHub |
 
 Cleanup done: removed `README.fa.md`, `publish-to-github.sh` and the duplicate root `PROJECT_HANDOFF.md`; moved upstream `README.md`, `HANDOFF.md` and screenshots to `docs/upstream/`; new short `README.md`; new `NOTICE.md` (attribution and every changed file); `.gitignore` gained `.kotlin/` and `__MACOSX/`.
 Committed on 12 Oct 2026.
@@ -168,7 +169,7 @@ zip -r ~/Desktop/qos-priority-scheduler.zip qos-priority-scheduler -x "*/.gradle
 | 10 | no app icons, confusing checkboxes | icons never loaded; meaning of a tick depends on selection mode | real icons, explanatory line, Tick all and Clear all |
 | 12 | PayProbe closed immediately after tapping the icon | `window.insetsController` was called in `onCreate` **before** `setContentView`; the decor view does not exist yet, so Android threw a NullPointerException (`MainActivity.kt:50`). Compiling and JVM tests cannot catch this | call moved after `setContentView` and wrapped in `runCatching`; found with `adb logcat -b crash -d` |
 | 11 | **round-robin was unfair** (one flow got 8 MB, another 0.6 MB in the same tier) | a tiny floor grant used up a flow's turn | fixed in `PriorityPacerCore.serve`; found by the new unit tests |
-| 13 | First probes after pressing Start sometimes all time out (two 3-row CSVs of 5000 ms rows) | Hypothesis: the tunnel was not usable yet. Procedure now: start the VPN, wait about 10 seconds, then Start PayProbe; if the first rows are timeouts, Stop and redo the run under a new label | open; not seen in the three WiFi runs (0 failures after the first 10 samples; the first 10 samples were not inspected) |
+| 13 | First probes after pressing Start sometimes all time out (two 3-row CSVs of 5000 ms rows) | Hypothesis: the tunnel was not usable yet. Procedure now: start the VPN, wait about 10 seconds, then Start PayProbe; if the first rows are timeouts, Stop and redo the run under a new label | open; **checked 14 Oct 2026 (Session 7):** the first 10 samples of all three WiFi runs are `ok=1` (no timeouts); the only timeouts in the repo are the two 3-row mobile files, so the cause (tunnel not ready) is still a hypothesis |
 | 14 | The VPN-off (C0) idle run is missing from the data; two files labelled C1 were reported as C0 | C0 is repeated; check the VPN key icon is gone before pressing Start, and put C0 or C1 in the label | **closed 14 Oct 2026:** C0 run recorded (`C0_idle_wifi_r1`) |
 
 ## 9. What we built: the scheduler (package `dev.netvalve.scheduler`)
@@ -232,7 +233,7 @@ Setup: mobile data on, WiFi off, phone untouched, about 3 minutes each, first 10
 
 Reading: (1) these are **three runs in the same condition (VPN on, idle)**, and their p95 values spread from 246 to 350 ms. The noise floor on mobile data is therefore about 100 ms at p95, and any later effect must be clearly bigger than that, must use medians over at least 5 runs, and must not rely on p99 or max. (2) The medians are 200 to 208 ms, so there is no sign of a problem with the tunnel itself. (3) **VPN overhead is NOT measured yet:** no VPN-off (C0) run exists in the data. An earlier chat summary called the two pooled `r1` files "C0"; that was wrong (both files are labelled C1) and is withdrawn. (4) The smoke run `test` (234 samples, p50 204, p95 259, max 1562) is not a baseline.
 
-Data hygiene found while checking the CSVs: two 3-row files (`C1_idle_mobile_r0`, and a second `C1_idle_mobile_r1`) contain only 5000 ms timeouts, from starts where the tunnel was probably not ready yet (hypothesis, not confirmed). `--skip 10` hides them, but they are kept out of future analysis. These runs live in `docs/data/` (mobile-data folder) as noise-floor evidence; the baselines are being redone on the network that the load runs will use.
+Data hygiene found while checking the CSVs: two 3-row files (`C1_idle_mobile_r0`, and a second `C1_idle_mobile_r1`) contain only 5000 ms timeouts, from starts where the tunnel was probably not ready yet (hypothesis, not confirmed). `--skip 10` hides them, but they are kept out of future analysis (always run `summarize.py` with `--skip 10`: with `--by label` and no skip the two files are pooled into `C1_idle_mobile_r1`, giving 384 rows, 3 failures and max 5000 ms; checked 14 Oct 2026). These runs live in `docs/data/` (mobile-data folder) as noise-floor evidence; the baselines are being redone on the network that the load runs will use.
 
 ### 10.2 Idle baselines on WiFi (14 Oct 2026, phone, no load)
 
@@ -291,3 +292,4 @@ M0 adopt and verify (done) · M1 PayProbe (done) · M2 Go/No-Go experiment (in p
 | 14 Oct 2026 | Session log (`docs/SESSION_LOG.md`) and start-of-session check (`tools/session_start_check.sh`) introduced; sessions 1 to 5 reconstructed from git history | 0, 15 |
 | 14 Oct 2026 | Branch `qos-scheduler` and 5 tags pushed to GitHub (`c34fc5f`); `tools/finish_session.sh` added (commit and push only if session log and handoff are updated) | 6, 15 |
 | 14 Oct 2026 | **Idle baselines on WiFi (C1, C0, C1) recorded:** no measurable VPN overhead at idle; WiFi p95 noise about 66 ms; problem 14 closed | 8, 10, 11 |
+| 14 Oct 2026 | Session 7 entry check: tables 10.1 and 10.2 recomputed from the CSVs (they match); problem 13 first-10-samples check; `--skip 10` rule; Section 6 commit rows corrected | 6, 8, 10 |
