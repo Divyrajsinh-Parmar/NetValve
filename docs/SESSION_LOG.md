@@ -140,20 +140,21 @@ One entry per working session, oldest first. This file answers three questions: 
 - `FlowSupervisor.kt` does not use the scheduler; its four `throttleManager.pace` calls are at lines 95, 109, 180 and 190 (M3 not started).
 - Git: `origin/qos-scheduler` = `478f4cd`, `origin/main` = `f7b34b0` (main untouched); 18 commits up to `c34fc5f`, as Session 6 recorded.
 - `tools/finish_session.sh` tested on a copy with a local bare remote: nothing changed gives exit 0; code without the session log gives STOP; code and log without the handoff gives STOP; all three together commit and push. Limit: it checks that the docs files are part of the change, not that their content is right.
+- Phone check (student's terminal output): `adb shell cmd wifi status` printed "Wifi is disabled" (so no SSID, band or signal yet); `pm list packages` shows `com.termux`, so Termux is available as the load source. Its installer and version are not checked yet.
 **Claimed, not verified:**
 - Setup of the three WiFi runs (only PayProbe ticked, mobile data off, VPN key icon gone for C0): not visible in the CSVs.
-- Which WiFi the runs used (own router, hotspot or college) and its name, band and signal: not recorded.
+- Which WiFi the runs used (own router, hotspot or college) and its name, band and signal: not recorded; the student cannot remember (asked 14 Oct 2026). Treated as network unknown.
 - M1 acceptance: the roadmap asked for a 5-minute run; the longest file is 243 s (`payprobe_test_20261014_115708.csv`), the idle runs are 180 to 196 s. The on-screen p50 and p95 versus the CSV, and the moving chart, were not recorded.
 - Test passes: the last Gradle test output is from Session 3 (36 tests, M0); the 9 PayProbe tests were run in a sandbox on 12 Oct; no `--full` run since.
 - Problem 8 (`protect()` fix) rests on the student's report only. The Session 6 GitHub screenshot is not in the repo and the remote tags were not checked.
-**Decisions:** none new.
+**Decisions:** the WiFi idle runs are kept as evidence but labelled network unknown; idle baselines (C1, C0, C1) are repeated on the network chosen for the load runs. Load source: Termux with parallel `curl` jobs.
 **Problems:** (a) `summarize.py --by label` without `--skip 10` pools the two 3-row files into `C1_idle_mobile_r1` (384 rows, 3 failures, max 5000 ms); rule added to handoff 10.1. (b) Handoff Section 6 still said "next commit" for `478f4cd`; corrected. (c) Tag `m1-payprobe-done` points to `c9c102b` (docs commit), the PayProbe code is `4e1b6da`; recorded, not an error.
 **Handoff state:**
 - HEAD at end: 478f4cd (the commit that adds this entry follows it)
 - Tags: pinned-base, week1-aar-built, scheduler-core, m1-payprobe-done, m2-idle-baselines-mobile
 - Tree clean: after `./tools/finish_session.sh`
 **Open at end:**
-- M2: record WiFi name, band and signal; measure link speed on that WiFi and set R = 0.9 x downlink; choose and test the load source (3 to 4 parallel downloads); load runs (a) no control and (b) static cap on the downloader, at least 5 repeats each; write the GO or No-Go decision in the handoff.
+- M2: choose the load network (own router or hotspot), turn WiFi on and record name, band and signal; repeat the idle baselines C1, C0, C1 there (3 minutes each, `--skip 10`); measure link speed on that WiFi and set R = 0.9 x downlink; choose and test the load source (3 to 4 parallel downloads); load runs (a) no control and (b) static cap on the downloader, at least 5 repeats each; write the GO or No-Go decision in the handoff.
 - Run `./tools/session_start_check.sh --full` once to get Gradle test and build evidence for M0 and M1.
 - Decide what "old project removal" means for the GitHub fork (default branch versus deleting anything); nothing was deleted.
 - Review the untouched docs (`ARCHITECTURE`, `LIMITATIONS`, `THROTTLING` and so on) for stale statements.

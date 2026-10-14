@@ -237,7 +237,7 @@ Data hygiene found while checking the CSVs: two 3-row files (`C1_idle_mobile_r0`
 
 ### 10.2 Idle baselines on WiFi (14 Oct 2026, phone, no load)
 
-Setup as instructed: WiFi on, mobile data off, phone untouched, 3 minutes each, first 10 samples skipped, only PayProbe ticked in NetValve; VPN on for C1 and off for C0 (the student was asked to confirm the VPN key icon was gone for C0). WiFi name, band and signal were not recorded in the repo. Files: `docs/data/idle_wifi/files/`. Values in ms:
+Setup as instructed: WiFi on, mobile data off, phone untouched, 3 minutes each, first 10 samples skipped, only PayProbe ticked in NetValve; VPN on for C1 and off for C0 (the student was asked to confirm the VPN key icon was gone for C0). WiFi name, band and signal were not recorded in the repo, and the student cannot remember which network it was (asked 14 Oct 2026), so these three runs count as **network unknown** and are repeated on the load network. Files: `docs/data/idle_wifi/files/`. Values in ms:
 
 | Run | VPN | n | fails | p50 | p95 | p99 | max | mean |
 |---|---|---|---|---|---|---|---|---|
@@ -293,3 +293,4 @@ M0 adopt and verify (done) · M1 PayProbe (done) · M2 Go/No-Go experiment (in p
 | 14 Oct 2026 | Branch `qos-scheduler` and 5 tags pushed to GitHub (`c34fc5f`); `tools/finish_session.sh` added (commit and push only if session log and handoff are updated) | 6, 15 |
 | 14 Oct 2026 | **Idle baselines on WiFi (C1, C0, C1) recorded:** no measurable VPN overhead at idle; WiFi p95 noise about 66 ms; problem 14 closed | 8, 10, 11 |
 | 14 Oct 2026 | Session 7 entry check: tables 10.1 and 10.2 recomputed from the CSVs (they match); problem 13 first-10-samples check; `--skip 10` rule; Section 6 commit rows corrected | 6, 8, 10 |
+| 14 Oct 2026 | Network of the WiFi idle runs is unknown (not recoverable); they are repeated on the load network | 10 |
