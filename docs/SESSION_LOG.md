@@ -189,3 +189,29 @@ One entry per working session, oldest first. This file answers three questions: 
 **Next session, first steps:**
 1. Run `./tools/session_start_check.sh --full` and write the Entry check (build and test results decide what is next).
 2. Fix whatever does not compile, then the phone checks above.
+
+## Session 9: 15 Oct 2026, entry check and the first full Gradle check
+**Goal:** run `./tools/session_start_check.sh --full` after the M3 to M5 code, and fix what fails.
+**Entry check:** student's Mac output: 17 ok, 3 warnings. HEAD `a973dab` ("Session 8: add REMAINING_WORK.md"), tree clean, `origin/qos-scheduler` equals HEAD (local tracking ref, not a live query), last logged commit `478f4cd` in history, tags present. This shows steps 6 and 8 of Session 8 were done. Warnings: the two 3-row mobile files (known since Session 5, handoff 10.1) and `./gradlew test FAILED` (new). No phone was connected, so section 6 had nothing to check.
+**Done (with evidence):**
+- `:app:assembleDebug -Pnetvalve.netstack=true` and `:payprobe:assembleDebug` pass on the Mac ("both APKs build"): the M3 to M5 Android code compiles under Gradle, including Hilt, DataStore and Compose. The check runs both with `-q`, so warnings are hidden.
+- Failure found: `./gradlew test` stops at `:payprobe:compileDebugUnitTestKotlin`. `PayProbeCoreTest.kt` line 3 imports `com.sun.net.httpserver.HttpServer`, which is unresolved on the Android unit-test classpath. The error is in an M1 test, not in the new code.
+- Fix written in an AI sandbox: the test server now uses `java.net.ServerSocket` (`TinyHttpServer` at the end of `PayProbeCoreTest.kt`). 9 of 9 tests pass in the sandbox in 3 runs with a stand-in runner; the old version passed 9 of 9 there too, so the sandbox could not show the Gradle problem. Gradle result: not yet seen.
+**Claimed, not verified:**
+- That the 9 PayProbe tests pass under Gradle. Earlier notes ("9 JVM tests" for M1) came from a sandbox; they had never run under Gradle.
+- Whether the app's unit tests (36 old and 26 new) compile and pass under Gradle: Gradle stopped at the PayProbe failure, so the output says nothing about them.
+- Everything on the phone (smoke checks) and all M2 and M6 measurements.
+**Decisions:** none new.
+**Problems:** handoff problem 16 added; Section 1, 9.1, 11, the roadmap tracker rows M3 to M5 and `REMAINING_WORK.md` now say "debug build passes" instead of "not built".
+**Handoff state:**
+- HEAD at end: a973dab (the commit that adds this entry follows it)
+- Tags: pinned-base, week1-aar-built, scheduler-core, m1-payprobe-done, m2-idle-baselines-mobile
+- Tree clean: after `./tools/finish_session.sh`
+**Open at end:**
+- Run `./gradlew test` again; if it fails, `./gradlew :app:testDebugUnitTest` shows the app tests separately. Paste errors.
+- Phone smoke checks (stop the VPN, install, Mode OFF like before; tier chips and persistence; tick NetValve, restart tunnel, simulator shows traffic), then M2 and M6 on the hotspot.
+- Cloudflare `__up` check; smaller upstream socket buffers not done; "old project removal" decision; review untouched docs.
+- M6 to M8 not started.
+**Next session, first steps:**
+1. Run `./tools/session_start_check.sh --full` and write the Entry check.
+2. Fix whatever still fails in `./gradlew test`, then the phone checks.
