@@ -1,0 +1,57 @@
+diff --git a/payprobe/src/main/kotlin/dev/netvalve/payprobe/Prober.kt b/payprobe/src/main/kotlin/dev/netvalve/payprobe/Prober.kt
+index 41c2ede..eaa2091 100644
+--- a/payprobe/src/main/kotlin/dev/netvalve/payprobe/Prober.kt
++++ b/payprobe/src/main/kotlin/dev/netvalve/payprobe/Prober.kt
+@@ -1,6 +1,7 @@
+ package dev.netvalve.payprobe
+ 
+ import java.net.HttpURLConnection
++import java.net.SocketTimeoutException
+ import java.net.URL
+ import java.util.concurrent.atomic.AtomicReference
+ 
+@@ -71,11 +72,18 @@ object Prober {
+             }
+             ProbeResult(elapsedMs(start).coerceAtMost(timeoutMs), code in 200..399, code, "")
+         } catch (e: Exception) {
+-            ProbeResult(elapsedMs(start).coerceAtMost(timeoutMs), false, -1, e.javaClass.simpleName)
++            // A connect or read timeout can fire just before the hard cap in probe() does. Both are
++            // the same event for the data, so store them the same way: "timeout", at the cap.
++            val latency = if (e is SocketTimeoutException) timeoutMs else elapsedMs(start).coerceAtMost(timeoutMs)
++            ProbeResult(latency, false, -1, noteFor(e))
+         } finally {
+             conn?.disconnect()
+         }
+     }
+ 
++    /** "timeout" for every kind of timeout, otherwise the exception class name. */
++    internal fun noteFor(e: Exception): String =
++        if (e is SocketTimeoutException) "timeout" else e.javaClass.simpleName
++
+     private fun elapsedMs(startNanos: Long): Long = (System.nanoTime() - startNanos) / 1_000_000L
+ }
+diff --git a/payprobe/src/test/kotlin/dev/netvalve/payprobe/PayProbeCoreTest.kt b/payprobe/src/test/kotlin/dev/netvalve/payprobe/PayProbeCoreTest.kt
+index 437440b..04c2a34 100644
+--- a/payprobe/src/test/kotlin/dev/netvalve/payprobe/PayProbeCoreTest.kt
++++ b/payprobe/src/test/kotlin/dev/netvalve/payprobe/PayProbeCoreTest.kt
+@@ -103,10 +103,19 @@ class PayProbeCoreTest {
+         val t0 = System.nanoTime()
+         val r = Prober.probe("$baseUrl/slow", 400)
+         val wall = (System.nanoTime() - t0) / 1_000_000
+-        assertFalse(r.ok); assertEquals("timeout", r.note); assertEquals(400L, r.latencyMs)
++        assertFalse(r.ok)
++        assertEquals("note=${r.note} latency=${r.latencyMs} wall=$wall ms", "timeout", r.note)
++        assertEquals("note=${r.note} latency=${r.latencyMs} wall=$wall ms", 400L, r.latencyMs)
+         assertTrue("returned after $wall ms", wall in 350..1_200)
+     }
+ 
++    @Test
++    fun everyKindOfTimeoutIsNotedAsTimeout() {
++        assertEquals("timeout", Prober.noteFor(java.net.SocketTimeoutException("Read timed out")))
++        assertEquals("timeout", Prober.noteFor(java.net.SocketTimeoutException("connect timed out")))
++        assertEquals("ConnectException", Prober.noteFor(java.net.ConnectException("refused")))
++    }
++
+     @Test
+     fun refusedConnectionFailsFast() {
+         val port = server.port

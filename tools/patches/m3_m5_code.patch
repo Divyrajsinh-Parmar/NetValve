@@ -1,0 +1,1992 @@
+diff --git a/app/src/main/kotlin/dev/netvalve/data/model/GlobalSettings.kt b/app/src/main/kotlin/dev/netvalve/data/model/GlobalSettings.kt
+index 14ed6c3..5cbb2bc 100644
+--- a/app/src/main/kotlin/dev/netvalve/data/model/GlobalSettings.kt
++++ b/app/src/main/kotlin/dev/netvalve/data/model/GlobalSettings.kt
+@@ -1,5 +1,6 @@
+ package dev.netvalve.data.model
+ 
++import dev.netvalve.scheduler.SchedMode
+ import kotlinx.serialization.Serializable
+ 
+ /**
+@@ -18,6 +19,10 @@ import kotlinx.serialization.Serializable
+  * @param autoStartOnBoot    re-arm the tunnel after reboot if consent is held.
+  * @param enabled            the user's desired tunnel state (persisted so the
+  *                           service can be restored after process death/boot).
++ * @param schedMode          priority scheduler mode. Only PRIORITY_PACER is active on the
++ *                           device; OFF (default) keeps stock NetValve behaviour.
++ * @param schedRateDownBytesPerSec  pacer rate R for download, bytes/s. 0 = not scheduled.
++ * @param schedRateUpBytesPerSec    pacer rate R for upload, bytes/s. 0 = not scheduled.
+  */
+ @Serializable
+ data class GlobalSettings(
+@@ -29,6 +34,9 @@ data class GlobalSettings(
+     val logLevel: Int = 1, // LogLevel.INFO.ordinal
+     val autoStartOnBoot: Boolean = false,
+     val enabled: Boolean = false,
++    val schedMode: SchedMode = SchedMode.OFF,
++    val schedRateDownBytesPerSec: Long = 0L,
++    val schedRateUpBytesPerSec: Long = 0L,
+ ) {
+     companion object {
+         // Kept in sync with SelectionMode; ONLY_SELECTED with no default caps is
+diff --git a/app/src/main/kotlin/dev/netvalve/di/EngineModule.kt b/app/src/main/kotlin/dev/netvalve/di/EngineModule.kt
+index 65405ef..638df61 100644
+--- a/app/src/main/kotlin/dev/netvalve/di/EngineModule.kt
++++ b/app/src/main/kotlin/dev/netvalve/di/EngineModule.kt
+@@ -3,6 +3,7 @@ package dev.netvalve.di
+ import android.content.Context
+ import android.net.ConnectivityManager
+ import android.os.Process
++import android.os.SystemClock
+ import dev.netvalve.data.model.SelectionMode
+ import dev.netvalve.log.Logger
+ import dev.netvalve.log.NetValveLogger
+@@ -19,6 +20,10 @@ import dev.netvalve.repository.SettingsRepository
+ import dev.netvalve.repository.StatsRepository
+ import dev.netvalve.rules.DeviceStateMonitor
+ import dev.netvalve.rules.RuleEngine
++import dev.netvalve.scheduler.SchedulerController
++import dev.netvalve.scheduler.SchedulerSettings
++import dev.netvalve.service.TierStore
++import dev.netvalve.sim.TrafficSimulator
+ import dev.netvalve.stats.StatsCollector
+ import dev.netvalve.throttle.ThrottleManager
+ import dagger.Module
+@@ -27,6 +32,8 @@ import dagger.hilt.InstallIn
+ import dagger.hilt.android.qualifiers.ApplicationContext
+ import dagger.hilt.components.SingletonComponent
+ import kotlinx.coroutines.CoroutineScope
++import kotlinx.coroutines.flow.distinctUntilChanged
++import kotlinx.coroutines.flow.map
+ import javax.inject.Singleton
+ 
+ /** Wires the framework-light engine singletons together. */
+@@ -104,6 +111,27 @@ object EngineModule {
+     fun provideConnectionManager(stats: StatsCollector, logger: Logger): ConnectionManager =
+         ConnectionManager(stats, logger)
+ 
++    /** M3: the priority scheduler, following the persisted mode and rates. */
++    @Provides
++    @Singleton
++    fun provideSchedulerController(
++        settingsRepository: SettingsRepository,
++        tierStore: TierStore,
++        @AppScope scope: CoroutineScope,
++    ): SchedulerController = SchedulerController(
++        scope = scope,
++        settings = settingsRepository.settings
++            .map { SchedulerSettings(it.schedMode, it.schedRateUpBytesPerSec, it.schedRateDownBytesPerSec) }
++            .distinctUntilChanged(),
++        tiers = tierStore.resolver,
++        nowMs = SystemClock::elapsedRealtime,
++    )
++
++    /** M5: the in-app traffic simulator (runs in the app scope so it survives screen changes). */
++    @Provides
++    @Singleton
++    fun provideTrafficSimulator(@AppScope scope: CoroutineScope): TrafficSimulator = TrafficSimulator(scope)
++
+     @Provides
+     @Singleton
+     fun provideModuleChain(modules: Set<@JvmSuppressWildcards TrafficModule>): ModuleChain =
+diff --git a/app/src/main/kotlin/dev/netvalve/di/RepositoryModule.kt b/app/src/main/kotlin/dev/netvalve/di/RepositoryModule.kt
+index 3a5a2f4..dbb2bde 100644
+--- a/app/src/main/kotlin/dev/netvalve/di/RepositoryModule.kt
++++ b/app/src/main/kotlin/dev/netvalve/di/RepositoryModule.kt
+@@ -14,7 +14,9 @@ import dev.netvalve.repository.LogRepository
+ import dev.netvalve.repository.PackageManagerAppRepository
+ import dev.netvalve.repository.RoomLogRepository
+ import dev.netvalve.repository.RoomStatsRepository
++import dev.netvalve.repository.DataStoreTierRepository
+ import dev.netvalve.repository.SettingsRepository
++import dev.netvalve.repository.TierRepository
+ import dev.netvalve.repository.StatsRepository
+ import dev.netvalve.rules.DeviceStateMonitor
+ import dev.netvalve.service.DeviceStateMonitorImpl
+@@ -43,6 +45,13 @@ object RepositoryModule {
+         dataStore: DataStore<Preferences>,
+     ): AppSelectionRepository = DataStoreAppSelectionRepository(dataStore)
+ 
++    @Provides
++    @Singleton
++    fun provideTierRepository(
++        dataStore: DataStore<Preferences>,
++        json: Json,
++    ): TierRepository = DataStoreTierRepository(dataStore, json)
++
+     @Provides
+     @Singleton
+     fun provideLogRepository(dao: LogDao): LogRepository = RoomLogRepository(dao)
+diff --git a/app/src/main/kotlin/dev/netvalve/network/FlowSupervisor.kt b/app/src/main/kotlin/dev/netvalve/network/FlowSupervisor.kt
+index 36580af..aab211b 100644
+--- a/app/src/main/kotlin/dev/netvalve/network/FlowSupervisor.kt
++++ b/app/src/main/kotlin/dev/netvalve/network/FlowSupervisor.kt
+@@ -7,6 +7,8 @@ import dev.netvalve.module.FlowOpenInput
+ import dev.netvalve.module.FlowVerdict
+ import dev.netvalve.module.ModuleChain
+ import dev.netvalve.rules.RuleEngine
++import dev.netvalve.scheduler.Lane
++import dev.netvalve.scheduler.SchedulerController
+ import dev.netvalve.stats.StatsCollector
+ import dev.netvalve.throttle.PacingQueue
+ import dev.netvalve.throttle.ThrottleManager
+@@ -40,6 +42,11 @@ class FlowSupervisor(
+     private val dnsCache: DnsCache,
+     /** When true, new flows are relayed unshaped ("pause all"). */
+     private val paused: () -> Boolean = { false },
++    /**
++     * Priority scheduler (M3). Null, mode OFF, or an unset rate = the relay behaves exactly as
++     * before: acquire() returns at once. The static caps of [throttleManager] always apply on top.
++     */
++    private val scheduler: SchedulerController? = null,
+ ) : FlowHandler {
+ 
+     override fun onTcpFlow(ctx: FlowContext, appSide: FlowStream) {
+@@ -54,7 +61,8 @@ class FlowSupervisor(
+ 
+     private suspend fun relayTcp(ctx: FlowContext, appSide: FlowStream) {
+         val uid = uidResolver.resolve(ctx)
+-        val verdict = if (paused() || !ruleEngine.isControlled(uid)) {
++        val unshaped = paused() || !ruleEngine.isControlled(uid)
++        val verdict = if (unshaped) {
+             // Paused or not-controlled: relay unshaped so connectivity is preserved.
+             FlowVerdict(blocked = false, downloadBytesPerSec = null, uploadBytesPerSec = null, warnThresholdPercent = null, tags = emptyMap())
+         } else {
+@@ -80,6 +88,11 @@ class FlowSupervisor(
+             return
+         }
+ 
++        // Scheduler hook: only controlled, unpaused flows take part.
++        val sched = if (unshaped) null else scheduler
++        val flowId = sched?.newFlowId() ?: 0L
++        sched?.let { logger.d(LogCategory.THROTTLE, it.describeFlow(uid, flowId), uid = uid) }
++
+         val upBucket = throttleManager.bucketFor(uid, Direction.UPLOAD)
+         val downBucket = throttleManager.bucketFor(uid, Direction.DOWNLOAD)
+ 
+@@ -92,6 +105,7 @@ class FlowSupervisor(
+                         val n = appSide.read(buf)
+                         if (n < 0) break
+                         if (n == 0) continue
++                        sched?.acquire(uid, flowId, Lane.UPLOAD, n)
+                         throttleManager.pace(upBucket, n.toLong())
+                         upstream.write(buf, 0, n)
+                         stats.recordUpload(uid, n.toLong())
+@@ -106,6 +120,7 @@ class FlowSupervisor(
+                         val n = upstream.read(buf)
+                         if (n < 0) break
+                         if (n == 0) continue
++                        sched?.acquire(uid, flowId, Lane.DOWNLOAD, n)
+                         throttleManager.pace(downBucket, n.toLong())
+                         appSide.write(buf, 0, n)
+                         stats.recordDownload(uid, n.toLong())
+@@ -119,6 +134,7 @@ class FlowSupervisor(
+         } finally {
+             runCatching { upstream.close() }
+             runCatching { appSide.close() }
++            sched?.releaseFlow(flowId)
+             stats.onFlowClosed(uid)
+             moduleChain.onFlowClose(ctx, uid)
+         }
+@@ -128,7 +144,8 @@ class FlowSupervisor(
+ 
+     private suspend fun relayUdp(ctx: FlowContext, appSide: DatagramStream) {
+         val uid = uidResolver.resolve(ctx)
+-        val verdict = if (paused() || !ruleEngine.isControlled(uid)) {
++        val unshaped = paused() || !ruleEngine.isControlled(uid)
++        val verdict = if (unshaped) {
+             FlowVerdict(blocked = false, downloadBytesPerSec = null, uploadBytesPerSec = null, warnThresholdPercent = null, tags = emptyMap())
+         } else {
+             moduleChain.evaluate(FlowOpenInput(ctx, uid))
+@@ -153,6 +170,13 @@ class FlowSupervisor(
+ 
+         // Paced, NOT dropped: a bounded queue smooths bursts; tail-drop is the
+         // documented last resort only when the app sustainably outruns its cap.
++        // Scheduler hook (DNS stays exempt). schedUp is fixed when the flow opens: UDP upload goes
++        // through the pacing queue only if it has a static cap or the scheduler is on for upload.
++        val sched = if (unshaped || dnsExempt) null else scheduler
++        val flowId = sched?.newFlowId() ?: 0L
++        val schedUp = sched?.isActive(Lane.UPLOAD) == true
++        sched?.let { logger.d(LogCategory.THROTTLE, it.describeFlow(uid, flowId), uid = uid) }
++
+         val upBucket = if (dnsExempt) null else throttleManager.bucketFor(uid, Direction.UPLOAD)
+         val downBucket = if (dnsExempt) null else throttleManager.bucketFor(uid, Direction.DOWNLOAD)
+         val egressQueue = PacingQueue<ByteArray>(UDP_QUEUE_BYTES, PacingQueue.DropPolicy.DROP_OLDEST)
+@@ -164,7 +188,7 @@ class FlowSupervisor(
+                     while (isActive) {
+                         val dg = appSide.receive() ?: break
+                         if (ctx.isDns) { stats.onDnsQuery() }
+-                        if (upBucket == null) {
++                        if (upBucket == null && !schedUp) {
+                             upstream.send(dg)
+                             stats.recordUpload(uid, dg.size.toLong())
+                         } else if (!egressQueue.offer(dg, dg.size.toLong())) {
+@@ -173,10 +197,11 @@ class FlowSupervisor(
+                     }
+                 }
+                 // pacer: queue -> upstream (UPLOAD)
+-                if (upBucket != null) launch {
++                if (upBucket != null || schedUp) launch {
+                     while (isActive) {
+                         val dg = egressQueue.poll()
+                         if (dg == null) { kotlinx.coroutines.delay(5); continue }
++                        sched?.acquire(uid, flowId, Lane.UPLOAD, dg.size)
+                         throttleManager.pace(upBucket, dg.size.toLong())
+                         upstream.send(dg)
+                         stats.recordUpload(uid, dg.size.toLong())
+@@ -187,6 +212,7 @@ class FlowSupervisor(
+                 launch {
+                     while (isActive) {
+                         val data = upstream.receive() ?: break
++                        sched?.acquire(uid, flowId, Lane.DOWNLOAD, data.size)
+                         throttleManager.pace(downBucket, data.size.toLong())
+                         appSide.send(data)
+                         stats.recordDownload(uid, data.size.toLong())
+@@ -200,6 +226,7 @@ class FlowSupervisor(
+         } finally {
+             runCatching { upstream.close() }
+             runCatching { appSide.close() }
++            sched?.releaseFlow(flowId)
+             stats.onFlowClosed(uid)
+             moduleChain.onFlowClose(ctx, uid)
+         }
+diff --git a/app/src/main/kotlin/dev/netvalve/repository/TierRepository.kt b/app/src/main/kotlin/dev/netvalve/repository/TierRepository.kt
+new file mode 100644
+index 0000000..1b931ab
+--- /dev/null
++++ b/app/src/main/kotlin/dev/netvalve/repository/TierRepository.kt
+@@ -0,0 +1,44 @@
++package dev.netvalve.repository
++
++import androidx.datastore.core.DataStore
++import androidx.datastore.preferences.core.Preferences
++import androidx.datastore.preferences.core.edit
++import androidx.datastore.preferences.core.stringPreferencesKey
++import dev.netvalve.scheduler.Tier
++import kotlinx.coroutines.flow.first
++import kotlinx.serialization.builtins.MapSerializer
++import kotlinx.serialization.builtins.serializer
++import kotlinx.serialization.json.Json
++
++/** Persists which package belongs to which priority tier (only the non-default ones). */
++interface TierRepository {
++    suspend fun current(): Map<String, Tier>
++    suspend fun save(tiers: Map<String, Tier>)
++}
++
++/**
++ * DataStore-backed [TierRepository]. Stored as one JSON object `{"package": "HIGH"}` under its own
++ * key, so it does not touch the existing settings or rules blobs. Unknown or damaged entries are
++ * skipped on read instead of failing.
++ */
++class DataStoreTierRepository(
++    private val dataStore: DataStore<Preferences>,
++    private val json: Json,
++) : TierRepository {
++
++    private val key = stringPreferencesKey("tiers_json")
++    private val serializer = MapSerializer(String.serializer(), String.serializer())
++
++    override suspend fun current(): Map<String, Tier> {
++        val raw = dataStore.data.first()[key] ?: return emptyMap()
++        val names = runCatching { json.decodeFromString(serializer, raw) }.getOrNull() ?: return emptyMap()
++        return names.mapNotNull { (pkg, name) ->
++            runCatching { Tier.valueOf(name) }.getOrNull()?.let { pkg to it }
++        }.toMap()
++    }
++
++    override suspend fun save(tiers: Map<String, Tier>) {
++        val names = tiers.mapValues { it.value.name }
++        dataStore.edit { it[key] = json.encodeToString(serializer, names) }
++    }
++}
+diff --git a/app/src/main/kotlin/dev/netvalve/rules/RuleEngine.kt b/app/src/main/kotlin/dev/netvalve/rules/RuleEngine.kt
+index 7a3615d..0dc2dbc 100644
+--- a/app/src/main/kotlin/dev/netvalve/rules/RuleEngine.kt
++++ b/app/src/main/kotlin/dev/netvalve/rules/RuleEngine.kt
+@@ -71,8 +71,15 @@ class RuleEngine(
+ 
+     /** True when [uid]'s traffic should be routed/shaped under the current mode. */
+     fun isControlled(uid: Int): Boolean {
+-        if (uid == ownUid) return false // never shape ourselves
+         val snap = snapshot.value
++        if (uid == ownUid) {
++            // Never shape ourselves by accident. Our own traffic only enters the tunnel when the user
++            // ticked NetValve in ONLY_SELECTED mode (ALL_EXCEPT always excludes our package), and that
++            // is how the in-app traffic simulator is put under the scheduler (roadmap M5). Our relay
++            // sockets are protected, so this cannot loop.
++            return snap.settings.selectionMode == SelectionMode.ONLY_SELECTED &&
++                appInfo.packagesForUid(uid).any { it in snap.selected }
++        }
+         val pkgs = appInfo.packagesForUid(uid)
+         if (pkgs.isEmpty()) {
+             // Unknown UID: in ALL_EXCEPT it is controlled (route by default),
+diff --git a/app/src/main/kotlin/dev/netvalve/scheduler/SchedulerController.kt b/app/src/main/kotlin/dev/netvalve/scheduler/SchedulerController.kt
+new file mode 100644
+index 0000000..5b83222
+--- /dev/null
++++ b/app/src/main/kotlin/dev/netvalve/scheduler/SchedulerController.kt
+@@ -0,0 +1,70 @@
++package dev.netvalve.scheduler
++
++import kotlinx.coroutines.CoroutineScope
++import kotlinx.coroutines.flow.Flow
++import kotlinx.coroutines.launch
++import java.util.concurrent.atomic.AtomicLong
++
++/**
++ * The one object the relay talks to. It owns the [SchedulerPacer], follows the settings
++ * (mode and rates) and resolves a UID to its tier.
++ *
++ * Relay usage, per chunk of n bytes (see `FlowSupervisor`):
++ *
++ *     scheduler.acquire(uid, flowId, Lane.UPLOAD, n)   // returns at once when the scheduler is off
++ *     throttleManager.pace(bucket, n)                  // existing static cap still applies on top
++ *
++ * Mode OFF, or a direction whose rate is 0, behaves exactly like stock NetValve: [acquire]
++ * returns immediately and nothing is queued.
++ *
++ * Pure Kotlin plus coroutines: no Android imports.
++ */
++class SchedulerController(
++    scope: CoroutineScope,
++    settings: Flow<SchedulerSettings>,
++    private val tiers: TierResolver,
++    nowMs: () -> Long,
++) {
++    @Volatile
++    var current: SchedulerSettings = SchedulerSettings()
++        private set
++
++    private val pacer = SchedulerPacer(scope, SchedulerConfig(), SchedulerConfig(), nowMs)
++    private val nextFlowId = AtomicLong(1L)
++
++    init {
++        scope.launch { settings.collect { apply(it) } }
++    }
++
++    private fun apply(s: SchedulerSettings) {
++        for (lane in Lane.values()) {
++            val rate = s.rateFor(lane)
++            if (rate > 0L) {
++                pacer.updateConfig(lane, SchedulerConfig(mode = SchedMode.PRIORITY_PACER, rateBytesPerSec = rate))
++            }
++        }
++        current = s
++    }
++
++    fun isActive(lane: Lane): Boolean = current.activeFor(lane)
++
++    fun newFlowId(): Long = nextFlowId.getAndIncrement()
++
++    fun tierOf(uid: Int): Tier = tiers.tierOfUid(uid)
++
++    /** Suspends until [bytes] of this flow may go out in [lane]; returns at once when inactive. */
++    suspend fun acquire(uid: Int, flowId: Long, lane: Lane, bytes: Int) {
++        if (!current.activeFor(lane)) return
++        pacer.acquire(tiers.tierOfUid(uid), flowId, lane, bytes)
++    }
++
++    /** Forget whatever the flow still has queued (call when its connection ends). */
++    fun releaseFlow(flowId: Long) = pacer.releaseFlow(flowId)
++
++    /** One line for the debug log at flow start: tier, mode and R of both directions. */
++    fun describeFlow(uid: Int, flowId: Long): String {
++        val s = current
++        return "sched flow=$flowId tier=${tiers.tierOfUid(uid)} mode=${s.mode} " +
++            "R_down=${RateUnits.formatMbps(s.rateDownBytesPerSec)} Mbps R_up=${RateUnits.formatMbps(s.rateUpBytesPerSec)} Mbps"
++    }
++}
+diff --git a/app/src/main/kotlin/dev/netvalve/scheduler/SchedulerSettings.kt b/app/src/main/kotlin/dev/netvalve/scheduler/SchedulerSettings.kt
+new file mode 100644
+index 0000000..83d4aae
+--- /dev/null
++++ b/app/src/main/kotlin/dev/netvalve/scheduler/SchedulerSettings.kt
+@@ -0,0 +1,50 @@
++package dev.netvalve.scheduler
++
++import java.util.Locale
++
++/**
++ * What the relay needs to know about scheduling, independent of Android and of the persisted
++ * `GlobalSettings`. The Android layer maps GlobalSettings to this class.
++ *
++ * Only [SchedMode.PRIORITY_PACER] (Mode B) is active on the device. [SchedMode.ADAPTIVE_THROTTLE]
++ * (Mode A) stays a simulation result (roadmap M7), so it behaves like OFF here.
++ *
++ * A rate of 0 means "not set": that direction is not scheduled.
++ */
++data class SchedulerSettings(
++    val mode: SchedMode = SchedMode.OFF,
++    val rateUpBytesPerSec: Long = 0L,
++    val rateDownBytesPerSec: Long = 0L,
++) {
++    fun rateFor(lane: Lane): Long = if (lane == Lane.UPLOAD) rateUpBytesPerSec else rateDownBytesPerSec
++
++    fun activeFor(lane: Lane): Boolean = mode == SchedMode.PRIORITY_PACER && rateFor(lane) > 0L
++}
++
++/** Conversions between the Mbps the user types and the bytes per second the pacer uses. */
++object RateUnits {
++    /** 1 Mbps = 1,000,000 bit/s = 125,000 B/s. */
++    fun mbpsToBytesPerSec(mbps: Double): Long =
++        if (mbps.isNaN() || mbps <= 0.0) 0L else Math.round(mbps * 125_000.0)
++
++    fun bytesPerSecToMbps(bytesPerSec: Long): Double = bytesPerSec / 125_000.0
++
++    /**
++     * Parses what a person types: "12", "12.5" or "12,5" (comma accepted for phone keyboards).
++     * Returns null for text that is not a number, is negative, or is above [MAX_MBPS].
++     */
++    fun parseMbps(text: String): Double? {
++        val value = text.trim().replace(',', '.').toDoubleOrNull() ?: return null
++        if (value.isNaN() || value.isInfinite() || value < 0.0 || value > MAX_MBPS) return null
++        return value
++    }
++
++    /** "0" for unset, otherwise up to two decimals without trailing zeros ("37.5", "40"). */
++    fun formatMbps(bytesPerSec: Long): String {
++        if (bytesPerSec <= 0L) return "0"
++        val s = String.format(Locale.ROOT, "%.2f", bytesPerSecToMbps(bytesPerSec))
++        return s.trimEnd('0').trimEnd('.')
++    }
++
++    const val MAX_MBPS = 10_000.0
++}
+diff --git a/app/src/main/kotlin/dev/netvalve/scheduler/TierAssignments.kt b/app/src/main/kotlin/dev/netvalve/scheduler/TierAssignments.kt
+index bbe481c..8b673da 100644
+--- a/app/src/main/kotlin/dev/netvalve/scheduler/TierAssignments.kt
++++ b/app/src/main/kotlin/dev/netvalve/scheduler/TierAssignments.kt
+@@ -8,6 +8,7 @@ package dev.netvalve.scheduler
+  *  - a shared-UID group (several packages, one UID) takes the HIGHEST tier among its packages
+  *
+  * Pure Kotlin so the UI and the relay can share it and tests can cover every rule.
++ * Methods are @Synchronized: relay threads read while the UI thread writes.
+  */
+ class TierAssignments(
+     initial: Map<String, Tier> = emptyMap(),
+@@ -19,16 +20,16 @@ class TierAssignments(
+         initial.forEach { (pkg, tier) -> if (pkg !in locked && tier != Tier.MEDIUM) put(pkg, tier) }
+     }
+ 
+-    fun tierOf(packageName: String): Tier = locked[packageName] ?: assigned[packageName] ?: Tier.MEDIUM
++    @Synchronized fun tierOf(packageName: String): Tier = locked[packageName] ?: assigned[packageName] ?: Tier.MEDIUM
+ 
+     /** Tier of a UID that maps to one or more packages (smallest level = most important). */
+-    fun tierOfPackages(packages: Collection<String>): Tier =
++    @Synchronized fun tierOfPackages(packages: Collection<String>): Tier =
+         if (packages.isEmpty()) Tier.MEDIUM else packages.map { tierOf(it) }.minByOrNull { it.level } ?: Tier.MEDIUM
+ 
+-    fun highPackages(): Set<String> =
++    @Synchronized fun highPackages(): Set<String> =
+         (assigned.filterValues { it == Tier.HIGH }.keys + locked.filterValues { it == Tier.HIGH }.keys)
+ 
+-    fun set(packageName: String, tier: Tier): SetResult {
++    @Synchronized fun set(packageName: String, tier: Tier): SetResult {
+         if (packageName in locked) return SetResult.LOCKED
+         if (tier == Tier.HIGH && assigned[packageName] != Tier.HIGH && highPackages().size >= Tier.MAX_HIGH_APPS) {
+             return SetResult.HIGH_FULL
+@@ -38,5 +39,5 @@ class TierAssignments(
+     }
+ 
+     /** Only the explicit, non-default assignments (what should be persisted). */
+-    fun snapshot(): Map<String, Tier> = assigned.toMap()
++    @Synchronized fun snapshot(): Map<String, Tier> = assigned.toMap()
+ }
+diff --git a/app/src/main/kotlin/dev/netvalve/scheduler/TierResolver.kt b/app/src/main/kotlin/dev/netvalve/scheduler/TierResolver.kt
+new file mode 100644
+index 0000000..b9634dd
+--- /dev/null
++++ b/app/src/main/kotlin/dev/netvalve/scheduler/TierResolver.kt
+@@ -0,0 +1,40 @@
++package dev.netvalve.scheduler
++
++import java.util.concurrent.ConcurrentHashMap
++import java.util.concurrent.atomic.AtomicInteger
++
++/**
++ * uid -> tier for the relay hot path.
++ *
++ * A UID maps to one or more packages ([packagesForUid], Android's PackageManager in production,
++ * a fake in tests); [TierAssignments] turns those into one tier (shared UID takes the highest).
++ * Results are cached per UID because the relay asks for every chunk. Call [invalidate] whenever a
++ * tier changes or a package is added or removed.
++ *
++ * Invalid (-1) and unattributed (-2) UIDs map to MEDIUM without asking the package source.
++ * Pure Kotlin: no Android imports.
++ */
++class TierResolver(
++    private val assignments: TierAssignments,
++    private val packagesForUid: (Int) -> List<String>,
++) {
++    private val cache = ConcurrentHashMap<Int, Tier>()
++
++    // Bumped by invalidate(): a lookup that started before an invalidate must not store its
++    // (possibly outdated) answer afterwards.
++    private val generation = AtomicInteger(0)
++
++    fun tierOfUid(uid: Int): Tier {
++        if (uid < 0) return Tier.MEDIUM
++        cache[uid]?.let { return it }
++        val startedAt = generation.get()
++        val tier = assignments.tierOfPackages(packagesForUid(uid))
++        if (generation.get() == startedAt) cache[uid] = tier
++        return tier
++    }
++
++    fun invalidate() {
++        generation.incrementAndGet()
++        cache.clear()
++    }
++}
+diff --git a/app/src/main/kotlin/dev/netvalve/service/TierStore.kt b/app/src/main/kotlin/dev/netvalve/service/TierStore.kt
+new file mode 100644
+index 0000000..4a942ef
+--- /dev/null
++++ b/app/src/main/kotlin/dev/netvalve/service/TierStore.kt
+@@ -0,0 +1,77 @@
++package dev.netvalve.service
++
++import android.content.Context
++import dagger.hilt.android.qualifiers.ApplicationContext
++import dev.netvalve.di.AppScope
++import dev.netvalve.repository.AppInfoLookup
++import dev.netvalve.repository.TierRepository
++import dev.netvalve.scheduler.Tier
++import dev.netvalve.scheduler.TierAssignments
++import dev.netvalve.scheduler.TierResolver
++import kotlinx.coroutines.CoroutineScope
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.StateFlow
++import kotlinx.coroutines.launch
++import javax.inject.Inject
++import javax.inject.Singleton
++
++/**
++ * App-wide owner of the tier assignments (roadmap M4): the single object that the tier UI writes
++ * and the relay reads (through [resolver]).
++ *
++ * Fixed entries: this app itself is always LOW (the in-app traffic simulator is the "Low app" of
++ * the evaluation) and PayProbe is always HIGH. `context.packageName` is used for the first so the
++ * ".debug" suffix of debug builds is covered.
++ *
++ * Saved tiers load asynchronously after start; until then every app is MEDIUM (the safe default).
++ */
++@Singleton
++class TierStore @Inject constructor(
++    @ApplicationContext context: Context,
++    private val repository: TierRepository,
++    appInfo: AppInfoLookup,
++    @AppScope private val scope: CoroutineScope,
++) {
++    private val ownPackage: String = context.packageName
++
++    private val assignments = TierAssignments(
++        locked = mapOf(ownPackage to Tier.LOW, PAYPROBE_PACKAGE to Tier.HIGH),
++    )
++
++    /** Used by the relay: uid -> tier, cached. */
++    val resolver = TierResolver(assignments) { uid -> appInfo.packagesForUid(uid) }
++
++    private val _tiers = MutableStateFlow<Map<String, Tier>>(emptyMap())
++
++    /** The explicit (non-default) assignments; fixed entries are not in here, see [tierOfPackage]. */
++    val tiers: StateFlow<Map<String, Tier>> = _tiers
++
++    init {
++        scope.launch {
++            val saved = runCatching { repository.current() }.getOrDefault(emptyMap())
++            saved.forEach { (pkg, tier) -> assignments.set(pkg, tier) }
++            resolver.invalidate()
++            _tiers.value = assignments.snapshot()
++        }
++    }
++
++    fun tierOfPackage(packageName: String): Tier = assignments.tierOf(packageName)
++
++    fun isLocked(packageName: String): Boolean = packageName == ownPackage || packageName == PAYPROBE_PACKAGE
++
++    /** Applies at once to running flows (the relay asks the resolver per chunk); persists in the background. */
++    fun set(packageName: String, tier: Tier): TierAssignments.SetResult {
++        val result = assignments.set(packageName, tier)
++        if (result == TierAssignments.SetResult.OK) {
++            resolver.invalidate()
++            val snapshot = assignments.snapshot()
++            _tiers.value = snapshot
++            scope.launch { runCatching { repository.save(snapshot) } }
++        }
++        return result
++    }
++
++    companion object {
++        const val PAYPROBE_PACKAGE = "dev.netvalve.payprobe"
++    }
++}
+diff --git a/app/src/main/kotlin/dev/netvalve/service/TrafficEngine.kt b/app/src/main/kotlin/dev/netvalve/service/TrafficEngine.kt
+index 4dc621b..e031664 100644
+--- a/app/src/main/kotlin/dev/netvalve/service/TrafficEngine.kt
++++ b/app/src/main/kotlin/dev/netvalve/service/TrafficEngine.kt
+@@ -15,6 +15,7 @@ import dev.netvalve.network.UidResolver
+ import dev.netvalve.repository.StatsRepository
+ import dev.netvalve.rules.DeviceStateMonitor
+ import dev.netvalve.rules.RuleEngine
++import dev.netvalve.scheduler.SchedulerController
+ import dev.netvalve.stats.StatsCollector
+ import dev.netvalve.stats.StatsSnapshot
+ import dev.netvalve.throttle.ThrottleManager
+@@ -52,6 +53,7 @@ class TrafficEngine @Inject constructor(
+     private val moduleChain: ModuleChain,
+     private val statsRepository: StatsRepository,
+     private val deviceStateMonitor: DeviceStateMonitor,
++    private val schedulerController: SchedulerController,
+ ) {
+     @Volatile var isRunning: Boolean = false
+         private set
+@@ -111,6 +113,7 @@ class TrafficEngine @Inject constructor(
+             logger = logger,
+             dnsCache = dnsCache,
+             paused = { paused.get() },
++            scheduler = schedulerController,
+         )
+ 
+         val p = pipelineFactory.create()
+diff --git a/app/src/main/kotlin/dev/netvalve/sim/SimHttp.kt b/app/src/main/kotlin/dev/netvalve/sim/SimHttp.kt
+new file mode 100644
+index 0000000..684a831
+--- /dev/null
++++ b/app/src/main/kotlin/dev/netvalve/sim/SimHttp.kt
+@@ -0,0 +1,71 @@
++package dev.netvalve.sim
++
++import java.net.InetSocketAddress
++import java.net.Socket
++import java.net.URI
++import javax.net.ssl.HttpsURLConnection
++import javax.net.ssl.SSLSocket
++import javax.net.ssl.SSLSocketFactory
++
++/**
++ * Minimal HTTP/1.1 over a raw socket for the traffic simulator.
++ *
++ * Why not HttpURLConnection: the roadmap wants separate connections, plain HTTP/1.1, no reuse.
++ * A raw socket guarantees that: every call opens its own connection, sends `Connection: close`
++ * and never offers HTTP/2. Pure JDK classes, no Android imports.
++ */
++internal object SimHttp {
++
++    class Target(val secure: Boolean, val host: String, val port: Int, val pathAndQuery: String)
++
++    /** @throws IllegalArgumentException for anything but a valid http or https URL. */
++    fun parse(url: String): Target {
++        val uri = try {
++            URI(url.trim())
++        } catch (e: Exception) {
++            throw IllegalArgumentException("Not a valid URL: $url")
++        }
++        val scheme = uri.scheme?.lowercase()
++        require(scheme == "http" || scheme == "https") { "URL must start with http:// or https://" }
++        val host = uri.host
++        require(!host.isNullOrEmpty()) { "URL has no host: $url" }
++        val secure = scheme == "https"
++        val port = if (uri.port > 0) uri.port else if (secure) 443 else 80
++        val path = (uri.rawPath?.takeIf { it.isNotEmpty() } ?: "/") + (uri.rawQuery?.let { "?$it" } ?: "")
++        return Target(secure, host, port, path)
++    }
++
++    fun getRequest(t: Target): ByteArray =
++        ("GET ${t.pathAndQuery} HTTP/1.1\r\nHost: ${hostHeader(t)}\r\nUser-Agent: NetValve-Sim\r\n" +
++            "Accept: */*\r\nConnection: close\r\n\r\n").toByteArray(Charsets.US_ASCII)
++
++    fun postHeader(t: Target, contentLength: Long): ByteArray =
++        ("POST ${t.pathAndQuery} HTTP/1.1\r\nHost: ${hostHeader(t)}\r\nUser-Agent: NetValve-Sim\r\n" +
++            "Content-Type: application/octet-stream\r\nContent-Length: $contentLength\r\n" +
++            "Connection: close\r\n\r\n").toByteArray(Charsets.US_ASCII)
++
++    private fun hostHeader(t: Target): String {
++        val default = if (t.secure) 443 else 80
++        return if (t.port == default) t.host else "${t.host}:${t.port}"
++    }
++
++    /** Opens a NEW connection (TLS for https, with hostname check). The caller closes it. */
++    fun open(t: Target, connectTimeoutMs: Int = 10_000, readTimeoutMs: Int = 15_000): Socket {
++        val plain = Socket()
++        plain.tcpNoDelay = true
++        plain.connect(InetSocketAddress(t.host, t.port), connectTimeoutMs)
++        plain.soTimeout = readTimeoutMs
++        if (!t.secure) return plain
++        val ssl = (SSLSocketFactory.getDefault() as SSLSocketFactory).createSocket(plain, t.host, t.port, true) as SSLSocket
++        try {
++            ssl.soTimeout = readTimeoutMs
++            ssl.startHandshake()
++            val ok = HttpsURLConnection.getDefaultHostnameVerifier().verify(t.host, ssl.session)
++            if (!ok) throw javax.net.ssl.SSLPeerUnverifiedException("hostname ${t.host} not verified")
++        } catch (e: Exception) {
++            runCatching { ssl.close() }
++            throw e
++        }
++        return ssl
++    }
++}
+diff --git a/app/src/main/kotlin/dev/netvalve/sim/TrafficSimulator.kt b/app/src/main/kotlin/dev/netvalve/sim/TrafficSimulator.kt
+new file mode 100644
+index 0000000..28428b9
+--- /dev/null
++++ b/app/src/main/kotlin/dev/netvalve/sim/TrafficSimulator.kt
+@@ -0,0 +1,183 @@
++package dev.netvalve.sim
++
++import kotlinx.coroutines.CoroutineScope
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.Job
++import kotlinx.coroutines.delay
++import kotlinx.coroutines.isActive
++import kotlinx.coroutines.launch
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.StateFlow
++import java.io.IOException
++import java.net.Socket
++import java.util.concurrent.ConcurrentHashMap
++import java.util.concurrent.atomic.AtomicInteger
++import java.util.concurrent.atomic.AtomicLong
++import kotlin.random.Random
++
++enum class SimMode { DOWN, UP, BOTH }
++
++/** Live numbers for the simulator screen. Rates are bytes per second over the last second. */
++data class SimStats(
++    val running: Boolean = false,
++    val mode: SimMode? = null,
++    val downBps: Long = 0,
++    val upBps: Long = 0,
++    val totalDown: Long = 0,
++    val totalUp: Long = 0,
++    val elapsedSec: Int = 0,
++    val errors: Int = 0,
++    val lastError: String? = null,
++)
++
++/**
++ * The "Low app" of the evaluation (roadmap M5): generates heavy traffic under NetValve's own UID,
++ * which the tier rules lock to Low.
++ *
++ * Down: [downloads] parallel GETs, each a separate HTTP/1.1 connection that is reopened when it ends.
++ * Up: [uploads] parallel POSTs of random bytes, each a separate connection.
++ * Stops by itself after the auto-stop time (0 = never) so a forgotten run cannot eat a data pack.
++ *
++ * Pure Kotlin plus coroutines: no Android imports, so it is tested on a JVM against a local server.
++ * It runs in [scope] (the app scope) so the load keeps going when the screen is left.
++ */
++class TrafficSimulator(
++    private val scope: CoroutineScope,
++    private val downloads: Int = DEFAULT_DOWNLOADS,
++    private val uploads: Int = DEFAULT_UPLOADS,
++) {
++    private val _stats = MutableStateFlow(SimStats())
++    val stats: StateFlow<SimStats> = _stats
++
++    private val downBytes = AtomicLong(0)
++    private val upBytes = AtomicLong(0)
++    private val errors = AtomicInteger(0)
++    @Volatile private var lastError: String? = null
++    @Volatile private var running = false
++    private var job: Job? = null
++    private val sockets: MutableSet<Socket> = ConcurrentHashMap.newKeySet()
++
++    /**
++     * @throws IllegalArgumentException when a needed URL is invalid (nothing is started then).
++     */
++    @Synchronized
++    fun start(mode: SimMode, downloadUrl: String, uploadUrl: String, autoStopSec: Int) {
++        val down = if (mode != SimMode.UP) SimHttp.parse(downloadUrl) else null
++        val up = if (mode != SimMode.DOWN) SimHttp.parse(uploadUrl) else null
++        stopInternal()
++
++        downBytes.set(0); upBytes.set(0); errors.set(0); lastError = null
++        running = true
++        _stats.value = SimStats(running = true, mode = mode)
++
++        job = scope.launch(Dispatchers.IO) {
++            if (down != null) repeat(downloads) { launch { downloadLoop(down) } }
++            if (up != null) repeat(uploads) { launch { uploadLoop(up) } }
++            sampleLoop(mode, autoStopSec)
++        }
++    }
++
++    @Synchronized
++    fun stop() {
++        stopInternal()
++        _stats.value = _stats.value.copy(running = false, downBps = 0, upBps = 0)
++    }
++
++    private fun stopInternal() {
++        running = false
++        job?.cancel()
++        job = null
++        // Blocking reads are not cancellable: closing the sockets makes them throw and end.
++        sockets.toList().forEach { runCatching { it.close() } }
++        sockets.clear()
++    }
++
++    private suspend fun sampleLoop(mode: SimMode, autoStopSec: Int) {
++        var lastDown = 0L
++        var lastUp = 0L
++        var seconds = 0
++        while (scope.isActive && running) {
++            delay(1_000)
++            seconds++
++            val d = downBytes.get()
++            val u = upBytes.get()
++            _stats.value = SimStats(
++                running = true, mode = mode,
++                downBps = d - lastDown, upBps = u - lastUp,
++                totalDown = d, totalUp = u,
++                elapsedSec = seconds, errors = errors.get(), lastError = lastError,
++            )
++            lastDown = d
++            lastUp = u
++            if (autoStopSec > 0 && seconds >= autoStopSec) {
++                stop()
++                return
++            }
++        }
++    }
++
++    private suspend fun downloadLoop(t: SimHttp.Target) {
++        val buf = ByteArray(BUFFER)
++        while (running) {
++            var s: Socket? = null
++            try {
++                s = SimHttp.open(t)
++                sockets.add(s)
++                s.getOutputStream().apply { write(SimHttp.getRequest(t)); flush() }
++                val input = s.getInputStream()
++                while (running) {
++                    val n = input.read(buf)
++                    if (n < 0) break
++                    downBytes.addAndGet(n.toLong())
++                }
++            } catch (e: IOException) {
++                if (running) noteError(e)
++            } finally {
++                s?.let { sockets.remove(it); runCatching { it.close() } }
++            }
++            if (running) delay(RETRY_DELAY_MS)
++        }
++    }
++
++    private suspend fun uploadLoop(t: SimHttp.Target) {
++        val chunk = ByteArray(BUFFER).also { Random.nextBytes(it) }
++        while (running) {
++            var s: Socket? = null
++            try {
++                s = SimHttp.open(t)
++                sockets.add(s)
++                val out = s.getOutputStream()
++                out.write(SimHttp.postHeader(t, UPLOAD_BODY_BYTES))
++                var sent = 0L
++                while (running && sent < UPLOAD_BODY_BYTES) {
++                    val n = minOf(chunk.size.toLong(), UPLOAD_BODY_BYTES - sent).toInt()
++                    out.write(chunk, 0, n)
++                    sent += n
++                    upBytes.addAndGet(n.toLong())
++                }
++                out.flush()
++            } catch (e: IOException) {
++                if (running) noteError(e)
++            } finally {
++                s?.let { sockets.remove(it); runCatching { it.close() } }
++            }
++            if (running) delay(RETRY_DELAY_MS)
++        }
++    }
++
++    private fun noteError(e: Exception) {
++        errors.incrementAndGet()
++        lastError = "${e.javaClass.simpleName}: ${e.message}"
++    }
++
++    companion object {
++        const val DEFAULT_DOWNLOADS = 3
++        const val DEFAULT_UPLOADS = 2
++        const val DEFAULT_DOWNLOAD_URL = "https://speed.cloudflare.com/__down?bytes=100000000"
++        const val DEFAULT_UPLOAD_URL = "https://speed.cloudflare.com/__up"
++        const val DEFAULT_AUTO_STOP_SEC = 60
++        private const val BUFFER = 16 * 1024
++        private const val UPLOAD_BODY_BYTES = 25L * 1024 * 1024
++        private const val RETRY_DELAY_MS = 500L
++    }
++}
+diff --git a/app/src/main/kotlin/dev/netvalve/ui/apps/AppSelectionViewModel.kt b/app/src/main/kotlin/dev/netvalve/ui/apps/AppSelectionViewModel.kt
+index aeebdf1..526917e 100644
+--- a/app/src/main/kotlin/dev/netvalve/ui/apps/AppSelectionViewModel.kt
++++ b/app/src/main/kotlin/dev/netvalve/ui/apps/AppSelectionViewModel.kt
+@@ -7,10 +7,14 @@ import dev.netvalve.data.model.SelectionMode
+ import dev.netvalve.repository.SettingsRepository
+ import dev.netvalve.repository.AppSelectionRepository
+ import dev.netvalve.repository.InstalledAppsRepository
++import dev.netvalve.scheduler.Tier
++import dev.netvalve.scheduler.TierAssignments
++import dev.netvalve.service.TierStore
+ import dev.netvalve.service.VpnController
+ import dev.netvalve.service.VpnStatus
+ import dagger.hilt.android.lifecycle.HiltViewModel
+ import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.asStateFlow
+ import kotlinx.coroutines.flow.SharingStarted
+ import kotlinx.coroutines.flow.StateFlow
+ import kotlinx.coroutines.flow.combine
+@@ -19,7 +23,14 @@ import kotlinx.coroutines.flow.stateIn
+ import kotlinx.coroutines.launch
+ import javax.inject.Inject
+ 
+-data class AppRowUi(val app: InstalledApp, val selected: Boolean)
++data class AppRowUi(
++    val app: InstalledApp,
++    val selected: Boolean,
++    /** Priority tier (M4). Only meaningful for apps the tunnel controls. */
++    val tier: Tier = Tier.MEDIUM,
++    /** Fixed tier (NetValve itself = Low, PayProbe = High); cannot be changed. */
++    val locked: Boolean = false,
++)
+ 
+ data class AppsUiState(
+     val apps: List<AppRowUi> = emptyList(),
+@@ -35,6 +46,7 @@ class AppSelectionViewModel @Inject constructor(
+     private val installedApps: InstalledAppsRepository,
+     private val selectionRepository: AppSelectionRepository,
+     private val controller: VpnController,
++    private val tierStore: TierStore,
+     settingsRepository: SettingsRepository,
+ ) : ViewModel() {
+ 
+@@ -62,8 +74,23 @@ class AppSelectionViewModel @Inject constructor(
+             pendingRestart = pendingRestart.value && status.isActive,
+             tunnelActive = status.isActive,
+         )
++    }.combine(tierStore.tiers) { state, _ ->
++        // Re-read the tier of every row whenever an assignment changes (or the saved ones load).
++        state.copy(
++            apps = state.apps.map { row ->
++                row.copy(
++                    tier = tierStore.tierOfPackage(row.app.packageName),
++                    locked = tierStore.isLocked(row.app.packageName),
++                )
++            },
++        )
+     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppsUiState())
+ 
++    private val _tierMessage = MutableStateFlow<String?>(null)
++
++    /** One line of feedback for the tier chips (for example when High is full). */
++    val tierMessage: StateFlow<String?> = _tierMessage.asStateFlow()
++
+     /** Decides what a ticked checkbox means (controlled vs excluded). */
+     val selectionMode: StateFlow<SelectionMode> = settingsRepository.settings
+         .map { it.selectionMode }
+@@ -71,6 +98,24 @@ class AppSelectionViewModel @Inject constructor(
+ 
+     fun setQuery(q: String) { query.value = q }
+ 
++    /** Tap on a tier chip: Medium -> High -> Low -> Medium. High holds at most 3 apps. */
++    fun cycleTier(packageName: String) {
++        val next = when (tierStore.tierOfPackage(packageName)) {
++            Tier.MEDIUM -> Tier.HIGH
++            Tier.HIGH -> Tier.LOW
++            Tier.LOW -> Tier.MEDIUM
++        }
++        when (tierStore.set(packageName, next)) {
++            TierAssignments.SetResult.OK -> _tierMessage.value = null
++            TierAssignments.SetResult.HIGH_FULL -> {
++                tierStore.set(packageName, Tier.LOW)
++                _tierMessage.value = "High holds at most ${Tier.MAX_HIGH_APPS} apps, so this app went to Low. " +
++                    "Move a High app to Low or Medium first to free a place."
++            }
++            TierAssignments.SetResult.LOCKED -> _tierMessage.value = "This app's tier is fixed."
++        }
++    }
++
+     fun setIncludeSystem(value: Boolean) {
+         includeSystem.value = value
+         reload()
+diff --git a/app/src/main/kotlin/dev/netvalve/ui/apps/AppsScreen.kt b/app/src/main/kotlin/dev/netvalve/ui/apps/AppsScreen.kt
+index 02fc5b6..ffeb279 100644
+--- a/app/src/main/kotlin/dev/netvalve/ui/apps/AppsScreen.kt
++++ b/app/src/main/kotlin/dev/netvalve/ui/apps/AppsScreen.kt
+@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
+ import androidx.compose.material.icons.Icons
+ import androidx.compose.material.icons.filled.Search
+ import androidx.compose.material.icons.filled.Tune
++import androidx.compose.material3.AssistChip
+ import androidx.compose.material3.Checkbox
+ import androidx.compose.material3.CircularProgressIndicator
+ import androidx.compose.material3.ExperimentalMaterial3Api
+@@ -43,6 +44,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
+ import androidx.lifecycle.compose.collectAsStateWithLifecycle
+ import androidx.core.graphics.drawable.toBitmap
+ import dev.netvalve.data.model.SelectionMode
++import dev.netvalve.scheduler.Tier
+ import dev.netvalve.ui.components.EmptyState
+ import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.withContext
+@@ -55,6 +57,7 @@ fun AppsScreen(
+ ) {
+     val state by viewModel.uiState.collectAsStateWithLifecycle()
+     val mode by viewModel.selectionMode.collectAsStateWithLifecycle()
++    val tierMessage by viewModel.tierMessage.collectAsStateWithLifecycle()
+ 
+     Column(Modifier.fillMaxSize()) {
+         TopAppBar(title = { Text("Apps") })
+@@ -79,6 +82,22 @@ fun AppsScreen(
+             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+         )
+ 
++        Text(
++            "Priority tier of a controlled app (tap the chip): High is served first (at most ${Tier.MAX_HIGH_APPS} apps), " +
++                "Medium is the default, Low gets what is left. NetValve itself is always Low and PayProbe always High.",
++            style = MaterialTheme.typography.bodySmall,
++            color = MaterialTheme.colorScheme.onSurfaceVariant,
++            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
++        )
++        tierMessage?.let {
++            Text(
++                it,
++                style = MaterialTheme.typography.bodySmall,
++                color = MaterialTheme.colorScheme.tertiary,
++                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
++            )
++        }
++
+         Row(
+             Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+             verticalAlignment = Alignment.CenterVertically,
+@@ -119,6 +138,11 @@ fun AppsScreen(
+                         packageName = row.app.packageName,
+                         isSystem = row.app.isSystem,
+                         selected = row.selected,
++                        // ONLY_SELECTED: ticked = controlled. ALL_EXCEPT: ticked = excluded.
++                        controlled = if (mode == SelectionMode.ONLY_SELECTED) row.selected else !row.selected,
++                        tier = row.tier,
++                        tierLocked = row.locked,
++                        onTierClick = { viewModel.cycleTier(row.app.packageName) },
+                         onToggle = { viewModel.toggle(row.app.packageName, it) },
+                         onOpen = { onOpenApp(row.app.packageName) },
+                     )
+@@ -134,6 +158,10 @@ private fun AppRow(
+     packageName: String,
+     isSystem: Boolean,
+     selected: Boolean,
++    controlled: Boolean,
++    tier: Tier,
++    tierLocked: Boolean,
++    onTierClick: () -> Unit,
+     onToggle: (Boolean) -> Unit,
+     onOpen: () -> Unit,
+ ) {
+@@ -152,12 +180,34 @@ private fun AppRow(
+                 maxLines = 1,
+                 overflow = TextOverflow.Ellipsis,
+             )
++            if (controlled) {
++                AssistChip(
++                    onClick = onTierClick,
++                    enabled = !tierLocked,
++                    label = { Text(tierLabel(tier, tierLocked)) },
++                )
++            } else {
++                Text(
++                    "Not controlled (bypasses the scheduler)",
++                    style = MaterialTheme.typography.labelSmall,
++                    color = MaterialTheme.colorScheme.onSurfaceVariant,
++                )
++            }
+         }
+         IconButton(onClick = onOpen) { Icon(Icons.Filled.Tune, contentDescription = "Configure") }
+         Checkbox(checked = selected, onCheckedChange = onToggle)
+     }
+ }
+ 
++private fun tierLabel(tier: Tier, locked: Boolean): String {
++    val name = when (tier) {
++        Tier.HIGH -> "High"
++        Tier.MEDIUM -> "Medium"
++        Tier.LOW -> "Low"
++    }
++    return if (locked) "$name (fixed)" else name
++}
++
+ @Composable
+ private fun AppIcon(packageName: String, label: String) {
+     val context = LocalContext.current
+diff --git a/app/src/main/kotlin/dev/netvalve/ui/dashboard/DashboardScreen.kt b/app/src/main/kotlin/dev/netvalve/ui/dashboard/DashboardScreen.kt
+index 5438f31..75222ad 100644
+--- a/app/src/main/kotlin/dev/netvalve/ui/dashboard/DashboardScreen.kt
++++ b/app/src/main/kotlin/dev/netvalve/ui/dashboard/DashboardScreen.kt
+@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
+ import androidx.compose.foundation.layout.height
+ import androidx.compose.foundation.layout.padding
+ import androidx.compose.foundation.layout.width
++import androidx.compose.foundation.text.KeyboardOptions
+ import androidx.compose.foundation.lazy.LazyColumn
+ import androidx.compose.material.icons.Icons
+ import androidx.compose.material.icons.filled.BatteryAlert
+@@ -20,20 +21,27 @@ import androidx.compose.material3.ExperimentalMaterial3Api
+ import androidx.compose.material3.FilledTonalButton
+ import androidx.compose.material3.Icon
+ import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.OutlinedTextField
+ import androidx.compose.material3.Switch
+ import androidx.compose.material3.Text
+ import androidx.compose.material3.TopAppBar
+ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.remember
++import androidx.compose.runtime.setValue
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.text.input.KeyboardType
+ import androidx.compose.ui.unit.dp
+ import androidx.hilt.navigation.compose.hiltViewModel
+ import androidx.lifecycle.compose.collectAsStateWithLifecycle
+ import dev.netvalve.BuildConfig
+ import dev.netvalve.data.model.Ipv6Mode
+ import dev.netvalve.data.model.SelectionMode
++import dev.netvalve.scheduler.RateUnits
++import dev.netvalve.scheduler.SchedMode
+ import dev.netvalve.service.TunnelState
+ import dev.netvalve.ui.components.SectionCard
+ import dev.netvalve.ui.components.StatTile
+@@ -104,6 +112,7 @@ fun DashboardScreen(
+             }
+ 
+             item { SummaryCard(state, onOpenApps, onOpenApp) }
++            item { SchedulerCard(state, viewModel) }
+             item { SettingsCard(state, viewModel) }
+             item { Spacer(Modifier.height(8.dp)) }
+         }
+@@ -215,6 +224,63 @@ private fun SummaryCard(state: DashboardUiState, onOpenApps: () -> Unit, onOpenA
+     }
+ }
+ 
++@Composable
++private fun SchedulerCard(state: DashboardUiState, viewModel: DashboardViewModel) {
++    val s = state.settings
++    var downText by remember(s.schedRateDownBytesPerSec) { mutableStateOf(RateUnits.formatMbps(s.schedRateDownBytesPerSec)) }
++    var upText by remember(s.schedRateUpBytesPerSec) { mutableStateOf(RateUnits.formatMbps(s.schedRateUpBytesPerSec)) }
++    var error by remember { mutableStateOf<String?>(null) }
++
++    SectionCard(title = "Priority scheduler") {
++        LabeledSwitchRow(
++            label = "Priority scheduler (Mode B)",
++            checked = s.schedMode == SchedMode.PRIORITY_PACER,
++            onCheckedChange = { viewModel.setSchedEnabled(it) },
++        )
++        Text(
++            "When on, controlled apps share rate R by tier: High first, then Medium, then Low, and " +
++                "Low gets what is left. Set R to about 0.9 x your measured link speed. A rate of 0 " +
++                "leaves that direction unscheduled. Static per-app caps still apply on top.",
++            style = MaterialTheme.typography.bodySmall,
++            color = MaterialTheme.colorScheme.onSurfaceVariant,
++        )
++        Spacer(Modifier.height(8.dp))
++        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++            OutlinedTextField(
++                value = downText,
++                onValueChange = { downText = it; error = null },
++                label = { Text("R download (Mbps)") },
++                singleLine = true,
++                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
++                modifier = Modifier.weight(1f),
++            )
++            OutlinedTextField(
++                value = upText,
++                onValueChange = { upText = it; error = null },
++                label = { Text("R upload (Mbps)") },
++                singleLine = true,
++                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
++                modifier = Modifier.weight(1f),
++            )
++        }
++        Spacer(Modifier.height(8.dp))
++        Button(onClick = {
++            val down = RateUnits.parseMbps(downText)
++            val up = RateUnits.parseMbps(upText)
++            if (down == null || up == null) {
++                error = "Enter numbers from 0 to ${RateUnits.MAX_MBPS.toInt()} (for example 25 or 12.5)."
++            } else {
++                viewModel.setSchedRates(downMbps = down, upMbps = up)
++                error = null
++            }
++        }) { Text("Save rates") }
++        error?.let {
++            Spacer(Modifier.height(4.dp))
++            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
++        }
++    }
++}
++
+ @OptIn(ExperimentalMaterial3Api::class)
+ @Composable
+ private fun SettingsCard(state: DashboardUiState, viewModel: DashboardViewModel) {
+diff --git a/app/src/main/kotlin/dev/netvalve/ui/dashboard/DashboardViewModel.kt b/app/src/main/kotlin/dev/netvalve/ui/dashboard/DashboardViewModel.kt
+index 0951bb7..33740b6 100644
+--- a/app/src/main/kotlin/dev/netvalve/ui/dashboard/DashboardViewModel.kt
++++ b/app/src/main/kotlin/dev/netvalve/ui/dashboard/DashboardViewModel.kt
+@@ -10,6 +10,8 @@ import dev.netvalve.data.model.SelectionMode
+ import dev.netvalve.repository.AppInfoLookup
+ import dev.netvalve.repository.AppSelectionRepository
+ import dev.netvalve.repository.SettingsRepository
++import dev.netvalve.scheduler.RateUnits
++import dev.netvalve.scheduler.SchedMode
+ import dev.netvalve.rules.DeviceState
+ import dev.netvalve.rules.DeviceStateMonitor
+ import dev.netvalve.service.BatteryOptimizations
+@@ -89,6 +91,18 @@ class DashboardViewModel @Inject constructor(
+     fun setExemptDns(value: Boolean) = update { it.copy(exemptDns = value) }
+     fun setAutoStart(value: Boolean) = update { it.copy(autoStartOnBoot = value) }
+ 
++    /** Priority scheduler on/off (Mode B). Takes effect immediately; no tunnel restart needed. */
++    fun setSchedEnabled(enabled: Boolean) =
++        update { it.copy(schedMode = if (enabled) SchedMode.PRIORITY_PACER else SchedMode.OFF) }
++
++    /** Pacer rates R in Mbps (0 = that direction is not scheduled). */
++    fun setSchedRates(downMbps: Double, upMbps: Double) = update {
++        it.copy(
++            schedRateDownBytesPerSec = RateUnits.mbpsToBytesPerSec(downMbps),
++            schedRateUpBytesPerSec = RateUnits.mbpsToBytesPerSec(upMbps),
++        )
++    }
++
+     /** Applying a mode change while running needs a tunnel rebuild. */
+     fun applyAndMaybeRestart() {
+         if (uiState.value.running) controller.restart()
+diff --git a/app/src/main/kotlin/dev/netvalve/ui/navigation/Navigation.kt b/app/src/main/kotlin/dev/netvalve/ui/navigation/Navigation.kt
+index 21122f6..8fb5415 100644
+--- a/app/src/main/kotlin/dev/netvalve/ui/navigation/Navigation.kt
++++ b/app/src/main/kotlin/dev/netvalve/ui/navigation/Navigation.kt
+@@ -6,6 +6,7 @@ import androidx.compose.material.icons.filled.Apps
+ import androidx.compose.material.icons.filled.Article
+ import androidx.compose.material.icons.filled.QueryStats
+ import androidx.compose.material.icons.filled.Shield
++import androidx.compose.material.icons.filled.Speed
+ import androidx.compose.material3.Icon
+ import androidx.compose.material3.NavigationBar
+ import androidx.compose.material3.NavigationBarItem
+@@ -27,6 +28,7 @@ import dev.netvalve.ui.appdetail.AppDetailScreen
+ import dev.netvalve.ui.apps.AppsScreen
+ import dev.netvalve.ui.dashboard.DashboardScreen
+ import dev.netvalve.ui.logs.LogsScreen
++import dev.netvalve.ui.sim.SimulatorScreen
+ import dev.netvalve.ui.stats.StatsScreen
+ 
+ /**
+@@ -46,10 +48,11 @@ sealed class Destination(val route: String, val label: String, val icon: ImageVe
+     data object Dashboard : Destination("dashboard", "Dashboard", Icons.Filled.Shield)
+     data object Apps : Destination("apps", "Apps", Icons.Filled.Apps)
+     data object Stats : Destination("stats", "Stats", Icons.Filled.QueryStats)
++    data object Simulator : Destination("sim", "Load", Icons.Filled.Speed)
+     data object Logs : Destination("logs", "Logs", Icons.Filled.Article)
+ 
+     companion object {
+-        val bottomBar = listOf(Dashboard, Apps, Stats, Logs)
++        val bottomBar = listOf(Dashboard, Apps, Stats, Simulator, Logs)
+         fun appDetail(pkg: String) = "appdetail/$pkg"
+         const val APP_DETAIL_ROUTE = "appdetail/{package}"
+     }
+@@ -106,6 +109,7 @@ fun NetValveNavGraph(actions: AppActions) {
+                 AppsScreen(onOpenApp = { pkg -> nav.navigate(Destination.appDetail(pkg)) })
+             }
+             composable(Destination.Stats.route) { StatsScreen() }
++            composable(Destination.Simulator.route) { SimulatorScreen() }
+             composable(Destination.Logs.route) { LogsScreen(actions = actions) }
+             composable(
+                 route = Destination.APP_DETAIL_ROUTE,
+diff --git a/app/src/main/kotlin/dev/netvalve/ui/sim/SimulatorScreen.kt b/app/src/main/kotlin/dev/netvalve/ui/sim/SimulatorScreen.kt
+new file mode 100644
+index 0000000..fafc1d9
+--- /dev/null
++++ b/app/src/main/kotlin/dev/netvalve/ui/sim/SimulatorScreen.kt
+@@ -0,0 +1,136 @@
++package dev.netvalve.ui.sim
++
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.Spacer
++import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.height
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.lazy.LazyColumn
++import androidx.compose.foundation.text.KeyboardOptions
++import androidx.compose.material3.Button
++import androidx.compose.material3.ExperimentalMaterial3Api
++import androidx.compose.material3.FilledTonalButton
++import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.OutlinedTextField
++import androidx.compose.material3.Text
++import androidx.compose.material3.TopAppBar
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.saveable.rememberSaveable
++import androidx.compose.runtime.setValue
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.text.input.KeyboardType
++import androidx.compose.ui.unit.dp
++import androidx.hilt.navigation.compose.hiltViewModel
++import androidx.lifecycle.compose.collectAsStateWithLifecycle
++import dev.netvalve.sim.SimMode
++import dev.netvalve.sim.TrafficSimulator
++import dev.netvalve.ui.components.SectionCard
++import dev.netvalve.ui.components.StatTile
++import dev.netvalve.utils.Format
++
++/**
++ * In-app traffic simulator (roadmap M5). The traffic runs under NetValve's own UID, which is always
++ * Low, so it plays the heavy "Low app" next to PayProbe (High) in the evaluation.
++ */
++@OptIn(ExperimentalMaterial3Api::class)
++@Composable
++fun SimulatorScreen(viewModel: SimulatorViewModel = hiltViewModel()) {
++    val stats by viewModel.stats.collectAsStateWithLifecycle()
++    val error by viewModel.error.collectAsStateWithLifecycle()
++
++    var downloadUrl by rememberSaveable { mutableStateOf(TrafficSimulator.DEFAULT_DOWNLOAD_URL) }
++    var uploadUrl by rememberSaveable { mutableStateOf(TrafficSimulator.DEFAULT_UPLOAD_URL) }
++    var autoStop by rememberSaveable { mutableStateOf(TrafficSimulator.DEFAULT_AUTO_STOP_SEC.toString()) }
++
++    Column(Modifier.fillMaxSize()) {
++        TopAppBar(title = { Text("Load") })
++        LazyColumn(
++            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
++            verticalArrangement = Arrangement.spacedBy(12.dp),
++        ) {
++            item {
++                SectionCard(title = "Traffic simulator") {
++                    Text(
++                        "Creates heavy traffic as NetValve itself (always Low tier): " +
++                            "${TrafficSimulator.DEFAULT_DOWNLOADS} parallel downloads and " +
++                            "${TrafficSimulator.DEFAULT_UPLOADS} parallel uploads, each on its own connection. " +
++                            "To send it through the tunnel, tick NetValve in the Apps list and restart the tunnel. " +
++                            "It uses a lot of data (hotspot or mobile data), so it stops by itself after the auto-stop time.",
++                        style = MaterialTheme.typography.bodySmall,
++                        color = MaterialTheme.colorScheme.onSurfaceVariant,
++                    )
++                    Spacer(Modifier.height(12.dp))
++                    OutlinedTextField(
++                        value = downloadUrl,
++                        onValueChange = { downloadUrl = it },
++                        label = { Text("Download URL (endless or large body)") },
++                        singleLine = true,
++                        enabled = !stats.running,
++                        modifier = Modifier.fillMaxWidth(),
++                    )
++                    Spacer(Modifier.height(8.dp))
++                    OutlinedTextField(
++                        value = uploadUrl,
++                        onValueChange = { uploadUrl = it },
++                        label = { Text("Upload URL (accepts POST)") },
++                        singleLine = true,
++                        enabled = !stats.running,
++                        modifier = Modifier.fillMaxWidth(),
++                    )
++                    Spacer(Modifier.height(8.dp))
++                    OutlinedTextField(
++                        value = autoStop,
++                        onValueChange = { autoStop = it },
++                        label = { Text("Auto-stop after (seconds, 0 = never)") },
++                        singleLine = true,
++                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
++                        enabled = !stats.running,
++                        modifier = Modifier.fillMaxWidth(),
++                    )
++                    error?.let {
++                        Spacer(Modifier.height(6.dp))
++                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
++                    }
++                    Spacer(Modifier.height(12.dp))
++                    if (stats.running) {
++                        Button(onClick = viewModel::stop) { Text("Stop") }
++                    } else {
++                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++                            Button(onClick = { viewModel.start(SimMode.DOWN, downloadUrl, uploadUrl, autoStop) }) { Text("Download") }
++                            FilledTonalButton(onClick = { viewModel.start(SimMode.UP, downloadUrl, uploadUrl, autoStop) }) { Text("Upload") }
++                            FilledTonalButton(onClick = { viewModel.start(SimMode.BOTH, downloadUrl, uploadUrl, autoStop) }) { Text("Both") }
++                        }
++                    }
++                }
++            }
++            item {
++                SectionCard(title = if (stats.running) "Running (${stats.mode}) · ${stats.elapsedSec} s" else "Last run") {
++                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
++                        StatTile("Download", Format.rate(stats.downBps))
++                        StatTile("Upload", Format.rate(stats.upBps))
++                        StatTile("Errors", stats.errors.toString())
++                    }
++                    Spacer(Modifier.height(8.dp))
++                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
++                        StatTile("Total down", Format.bytes(stats.totalDown))
++                        StatTile("Total up", Format.bytes(stats.totalUp))
++                    }
++                    stats.lastError?.let {
++                        Spacer(Modifier.height(6.dp))
++                        Text(
++                            "Last error: $it",
++                            style = MaterialTheme.typography.bodySmall,
++                            color = MaterialTheme.colorScheme.onSurfaceVariant,
++                        )
++                    }
++                }
++            }
++            item { Spacer(Modifier.height(8.dp)) }
++        }
++    }
++}
+diff --git a/app/src/main/kotlin/dev/netvalve/ui/sim/SimulatorViewModel.kt b/app/src/main/kotlin/dev/netvalve/ui/sim/SimulatorViewModel.kt
+new file mode 100644
+index 0000000..64c678b
+--- /dev/null
++++ b/app/src/main/kotlin/dev/netvalve/ui/sim/SimulatorViewModel.kt
+@@ -0,0 +1,40 @@
++package dev.netvalve.ui.sim
++
++import androidx.lifecycle.ViewModel
++import dagger.hilt.android.lifecycle.HiltViewModel
++import dev.netvalve.sim.SimMode
++import dev.netvalve.sim.SimStats
++import dev.netvalve.sim.TrafficSimulator
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.StateFlow
++import kotlinx.coroutines.flow.asStateFlow
++import javax.inject.Inject
++
++@HiltViewModel
++class SimulatorViewModel @Inject constructor(
++    private val simulator: TrafficSimulator,
++) : ViewModel() {
++
++    val stats: StateFlow<SimStats> = simulator.stats
++
++    private val _error = MutableStateFlow<String?>(null)
++
++    /** Shown when a URL or the auto-stop value is invalid; nothing is started then. */
++    val error: StateFlow<String?> = _error.asStateFlow()
++
++    fun start(mode: SimMode, downloadUrl: String, uploadUrl: String, autoStopText: String) {
++        val autoStop = autoStopText.trim().toIntOrNull()
++        if (autoStop == null || autoStop < 0) {
++            _error.value = "Auto-stop must be a whole number of seconds (0 = never)."
++            return
++        }
++        try {
++            simulator.start(mode, downloadUrl, uploadUrl, autoStop)
++            _error.value = null
++        } catch (e: IllegalArgumentException) {
++            _error.value = e.message ?: "Invalid URL."
++        }
++    }
++
++    fun stop() = simulator.stop()
++}
+diff --git a/app/src/test/kotlin/dev/netvalve/scheduler/RateUnitsTest.kt b/app/src/test/kotlin/dev/netvalve/scheduler/RateUnitsTest.kt
+new file mode 100644
+index 0000000..0e343a5
+--- /dev/null
++++ b/app/src/test/kotlin/dev/netvalve/scheduler/RateUnitsTest.kt
+@@ -0,0 +1,54 @@
++package dev.netvalve.scheduler
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertNull
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++class RateUnitsTest {
++    @Test
++    fun eightMbpsIsOneMegabytePerSecond() {
++        assertEquals(1_000_000L, RateUnits.mbpsToBytesPerSec(8.0))
++        assertEquals(8.0, RateUnits.bytesPerSecToMbps(1_000_000L), 1e-9)
++    }
++
++    @Test
++    fun zeroOrNegativeMeansUnset() {
++        assertEquals(0L, RateUnits.mbpsToBytesPerSec(0.0))
++        assertEquals(0L, RateUnits.mbpsToBytesPerSec(-3.0))
++        assertEquals(0L, RateUnits.mbpsToBytesPerSec(Double.NaN))
++    }
++
++    @Test
++    fun parseAcceptsDotAndCommaAndTrims() {
++        assertEquals(12.5, RateUnits.parseMbps(" 12.5 ")!!, 1e-9)
++        assertEquals(12.5, RateUnits.parseMbps("12,5")!!, 1e-9)
++        assertEquals(0.0, RateUnits.parseMbps("0")!!, 1e-9)
++    }
++
++    @Test
++    fun parseRejectsBadInput() {
++        assertNull(RateUnits.parseMbps(""))
++        assertNull(RateUnits.parseMbps("abc"))
++        assertNull(RateUnits.parseMbps("-1"))
++        assertNull(RateUnits.parseMbps("20000"))
++        assertNull(RateUnits.parseMbps("NaN"))
++    }
++
++    @Test
++    fun formatTrimsZeros() {
++        assertEquals("0", RateUnits.formatMbps(0L))
++        assertEquals("8", RateUnits.formatMbps(1_000_000L))
++        assertEquals("37.5", RateUnits.formatMbps(4_687_500L))
++    }
++
++    @Test
++    fun settingsActiveOnlyForPacerModeWithRate() {
++        val s = SchedulerSettings(SchedMode.PRIORITY_PACER, rateUpBytesPerSec = 0L, rateDownBytesPerSec = 500_000L)
++        assertFalse(s.activeFor(Lane.UPLOAD))
++        assertTrue(s.activeFor(Lane.DOWNLOAD))
++        assertFalse(s.copy(mode = SchedMode.OFF).activeFor(Lane.DOWNLOAD))
++        assertFalse(s.copy(mode = SchedMode.ADAPTIVE_THROTTLE).activeFor(Lane.DOWNLOAD))
++    }
++}
+diff --git a/app/src/test/kotlin/dev/netvalve/scheduler/SchedulerControllerTest.kt b/app/src/test/kotlin/dev/netvalve/scheduler/SchedulerControllerTest.kt
+new file mode 100644
+index 0000000..58f0b76
+--- /dev/null
++++ b/app/src/test/kotlin/dev/netvalve/scheduler/SchedulerControllerTest.kt
+@@ -0,0 +1,134 @@
++package dev.netvalve.scheduler
++
++import kotlinx.coroutines.CoroutineScope
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.SupervisorJob
++import kotlinx.coroutines.async
++import kotlinx.coroutines.cancel
++import kotlinx.coroutines.delay
++import kotlinx.coroutines.flow.Flow
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.runBlocking
++import kotlinx.coroutines.withTimeout
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++/** Real-time tests with generous tolerances (the pacer ticks every 10 ms). */
++class SchedulerControllerTest {
++
++    private val tiers = TierAssignments(mapOf("low.app" to Tier.LOW, "high.app" to Tier.HIGH))
++    private val resolver = TierResolver(tiers) { uid ->
++        when (uid) {
++            LOW_UID -> listOf("low.app")
++            HIGH_UID -> listOf("high.app")
++            else -> emptyList()
++        }
++    }
++
++    private fun scope() = CoroutineScope(SupervisorJob() + Dispatchers.Default)
++
++    private fun controller(scope: CoroutineScope, settings: Flow<SchedulerSettings>) =
++        SchedulerController(scope, settings, resolver) { System.nanoTime() / 1_000_000L }
++
++    private suspend fun waitUntil(timeoutMs: Long = 2_000, cond: () -> Boolean) {
++        val end = System.nanoTime() + timeoutMs * 1_000_000
++        while (!cond() && System.nanoTime() < end) delay(10)
++    }
++
++    @Test
++    fun offModeReturnsAtOnceAndQueuesNothing() {
++        val scope = scope()
++        try {
++            val c = controller(scope, MutableStateFlow(SchedulerSettings()))
++            runBlocking { withTimeout(1_000) { c.acquire(LOW_UID, c.newFlowId(), Lane.UPLOAD, 1_000_000) } }
++            assertFalse(c.isActive(Lane.UPLOAD))
++        } finally { scope.cancel() }
++    }
++
++    @Test
++    fun directionWithoutRateIsNotScheduled() {
++        val scope = scope()
++        try {
++            val c = controller(scope, MutableStateFlow(SchedulerSettings(SchedMode.PRIORITY_PACER, 0L, 1_000_000L)))
++            runBlocking {
++                waitUntil { c.isActive(Lane.DOWNLOAD) }
++                assertFalse(c.isActive(Lane.UPLOAD))
++                assertTrue(c.isActive(Lane.DOWNLOAD))
++                withTimeout(1_000) { c.acquire(LOW_UID, c.newFlowId(), Lane.UPLOAD, 500_000) }
++            }
++        } finally { scope.cancel() }
++    }
++
++    @Test
++    fun settingsChangesAreFollowed() {
++        val scope = scope()
++        try {
++            val flow = MutableStateFlow(SchedulerSettings())
++            val c = controller(scope, flow)
++            runBlocking {
++                flow.value = SchedulerSettings(SchedMode.PRIORITY_PACER, 1_000_000L, 1_000_000L)
++                waitUntil { c.isActive(Lane.UPLOAD) }
++                assertTrue(c.isActive(Lane.UPLOAD))
++                flow.value = SchedulerSettings()
++                waitUntil { !c.isActive(Lane.UPLOAD) }
++                assertFalse(c.isActive(Lane.UPLOAD))
++            }
++        } finally { scope.cancel() }
++    }
++
++    @Test
++    fun activeModeLimitsTheRate() {
++        val scope = scope()
++        try {
++            val c = controller(scope, MutableStateFlow(SchedulerSettings(SchedMode.PRIORITY_PACER, 1_000_000L, 1_000_000L)))
++            runBlocking {
++                waitUntil { c.isActive(Lane.DOWNLOAD) }
++                val start = System.nanoTime()
++                withTimeout(5_000) { c.acquire(LOW_UID, c.newFlowId(), Lane.DOWNLOAD, 500_000) }
++                val ms = (System.nanoTime() - start) / 1_000_000
++                // 500 kB at 1 MB/s is about 500 ms; allow a wide window for slow machines.
++                assertTrue("took $ms ms, expected about 500", ms in 300..3_000)
++            }
++        } finally { scope.cancel() }
++    }
++
++    @Test
++    fun highOvertakesALowFlow() {
++        val scope = scope()
++        try {
++            val c = controller(scope, MutableStateFlow(SchedulerSettings(SchedMode.PRIORITY_PACER, 1_000_000L, 1_000_000L)))
++            runBlocking {
++                waitUntil { c.isActive(Lane.DOWNLOAD) }
++                val lowFlow = c.newFlowId()
++                val low = async(Dispatchers.Default) { c.acquire(LOW_UID, lowFlow, Lane.DOWNLOAD, 600_000) }
++                delay(100) // let Low build a backlog
++                val start = System.nanoTime()
++                withTimeout(3_000) { c.acquire(HIGH_UID, c.newFlowId(), Lane.DOWNLOAD, 2_000) }
++                val highMs = (System.nanoTime() - start) / 1_000_000
++                assertTrue("High waited $highMs ms behind Low", highMs < 400)
++                assertFalse("Low must still be running when High is done", low.isCompleted)
++                low.await()
++            }
++        } finally { scope.cancel() }
++    }
++
++    @Test
++    fun describeFlowNamesTierModeAndRates() {
++        val scope = scope()
++        try {
++            val c = controller(scope, MutableStateFlow(SchedulerSettings(SchedMode.PRIORITY_PACER, 500_000L, 1_000_000L)))
++            runBlocking { waitUntil { c.isActive(Lane.UPLOAD) } }
++            val line = c.describeFlow(HIGH_UID, 7L)
++            assertTrue(line, "flow=7" in line && "tier=HIGH" in line && "mode=PRIORITY_PACER" in line)
++            assertTrue(line, "R_down=8 Mbps" in line && "R_up=4 Mbps" in line)
++            assertEquals(1L, c.newFlowId())
++        } finally { scope.cancel() }
++    }
++
++    private companion object {
++        const val LOW_UID = 10_001
++        const val HIGH_UID = 10_002
++    }
++}
+diff --git a/app/src/test/kotlin/dev/netvalve/scheduler/TierResolverTest.kt b/app/src/test/kotlin/dev/netvalve/scheduler/TierResolverTest.kt
+new file mode 100644
+index 0000000..d960db8
+--- /dev/null
++++ b/app/src/test/kotlin/dev/netvalve/scheduler/TierResolverTest.kt
+@@ -0,0 +1,65 @@
++package dev.netvalve.scheduler
++
++import org.junit.Assert.assertEquals
++import org.junit.Test
++
++class TierResolverTest {
++
++    private class FakePackages(private val map: Map<Int, List<String>>) {
++        var calls = 0
++        fun lookup(uid: Int): List<String> { calls++; return map[uid] ?: emptyList() }
++    }
++
++    @Test
++    fun resolvesAndCachesPerUid() {
++        val fake = FakePackages(mapOf(10_001 to listOf("a.low"), 10_002 to listOf("b.high")))
++        val tiers = TierAssignments(mapOf("a.low" to Tier.LOW, "b.high" to Tier.HIGH))
++        val r = TierResolver(tiers) { fake.lookup(it) }
++        assertEquals(Tier.LOW, r.tierOfUid(10_001))
++        assertEquals(Tier.HIGH, r.tierOfUid(10_002))
++        assertEquals(2, fake.calls)
++        repeat(5) { r.tierOfUid(10_001); r.tierOfUid(10_002) }
++        assertEquals("cache must absorb repeated lookups", 2, fake.calls)
++    }
++
++    @Test
++    fun invalidAndUnknownUidsAreMediumWithoutAskingTheSource() {
++        val fake = FakePackages(emptyMap())
++        val r = TierResolver(TierAssignments()) { fake.lookup(it) }
++        assertEquals(Tier.MEDIUM, r.tierOfUid(-1))
++        assertEquals(Tier.MEDIUM, r.tierOfUid(-2))
++        assertEquals(0, fake.calls)
++    }
++
++    @Test
++    fun unknownPackagesAreMedium() {
++        val r = TierResolver(TierAssignments()) { emptyList() }
++        assertEquals(Tier.MEDIUM, r.tierOfUid(10_050))
++    }
++
++    @Test
++    fun sharedUidTakesHighestTier() {
++        val tiers = TierAssignments(mapOf("x.low" to Tier.LOW, "x.high" to Tier.HIGH))
++        val r = TierResolver(tiers) { listOf("x.low", "x.high", "x.other") }
++        assertEquals(Tier.HIGH, r.tierOfUid(10_100))
++    }
++
++    @Test
++    fun tierChangeIsSeenAfterInvalidate() {
++        val tiers = TierAssignments()
++        val r = TierResolver(tiers) { listOf("some.app") }
++        assertEquals(Tier.MEDIUM, r.tierOfUid(10_200))
++        tiers.set("some.app", Tier.HIGH)
++        assertEquals("still cached", Tier.MEDIUM, r.tierOfUid(10_200))
++        r.invalidate()
++        assertEquals(Tier.HIGH, r.tierOfUid(10_200))
++    }
++
++    @Test
++    fun lockedEntriesWin() {
++        val tiers = TierAssignments(locked = mapOf("own.app" to Tier.LOW, "payprobe" to Tier.HIGH))
++        val r = TierResolver(tiers) { uid -> if (uid == 1) listOf("own.app") else listOf("payprobe") }
++        assertEquals(Tier.LOW, r.tierOfUid(1))
++        assertEquals(Tier.HIGH, r.tierOfUid(2))
++    }
++}
+diff --git a/app/src/test/kotlin/dev/netvalve/sim/TrafficSimulatorTest.kt b/app/src/test/kotlin/dev/netvalve/sim/TrafficSimulatorTest.kt
+new file mode 100644
+index 0000000..cc7a5ef
+--- /dev/null
++++ b/app/src/test/kotlin/dev/netvalve/sim/TrafficSimulatorTest.kt
+@@ -0,0 +1,207 @@
++package dev.netvalve.sim
++
++import kotlinx.coroutines.CoroutineScope
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.SupervisorJob
++import kotlinx.coroutines.cancel
++import kotlinx.coroutines.delay
++import kotlinx.coroutines.runBlocking
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Assert.fail
++import org.junit.Test
++import java.net.ServerSocket
++import java.net.Socket
++import java.util.concurrent.atomic.AtomicInteger
++import java.util.concurrent.atomic.AtomicLong
++
++/** Runs the simulator against a tiny local HTTP server (loopback only, no internet needed). */
++class TrafficSimulatorTest {
++
++    /** Answers GET with an endless body and swallows POST bodies; records connection counts. */
++    private class LocalServer : AutoCloseable {
++        val server = ServerSocket(0)
++        val accepted = AtomicInteger()
++        val active = AtomicInteger()
++        val peak = AtomicInteger()
++        val received = AtomicLong()
++        val gets = AtomicInteger()
++        val posts = AtomicInteger()
++        private val thread = Thread {
++            while (!server.isClosed) {
++                val s = try { server.accept() } catch (e: Exception) { break }
++                Thread { handle(s) }.apply { isDaemon = true }.start()
++            }
++        }.apply { isDaemon = true; start() }
++
++        val url: String get() = "http://127.0.0.1:${server.localPort}/x"
++
++        private fun handle(s: Socket) {
++            accepted.incrementAndGet()
++            val now = active.incrementAndGet()
++            peak.updateAndGet { maxOf(it, now) }
++            try {
++                val inp = s.getInputStream()
++                val head = StringBuilder()
++                while (!head.endsWith("\r\n\r\n")) {
++                    val b = inp.read()
++                    if (b < 0) return
++                    head.append(b.toChar())
++                }
++                if (head.startsWith("GET")) {
++                    gets.incrementAndGet()
++                    val out = s.getOutputStream()
++                    out.write("HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n".toByteArray())
++                    val chunk = ByteArray(32 * 1024)
++                    while (true) out.write(chunk)
++                } else {
++                    posts.incrementAndGet()
++                    val buf = ByteArray(32 * 1024)
++                    while (true) {
++                        val n = inp.read(buf)
++                        if (n < 0) break
++                        received.addAndGet(n.toLong())
++                    }
++                }
++            } catch (_: Exception) {
++            } finally {
++                active.decrementAndGet()
++                runCatching { s.close() }
++            }
++        }
++
++        override fun close() { runCatching { server.close() } }
++    }
++
++    private fun scope() = CoroutineScope(SupervisorJob() + Dispatchers.Default)
++
++    private suspend fun waitUntil(timeoutMs: Long, cond: () -> Boolean) {
++        val end = System.nanoTime() + timeoutMs * 1_000_000
++        while (!cond() && System.nanoTime() < end) delay(20)
++    }
++
++    @Test
++    fun parseHandlesDefaultsAndRejectsBadUrls() {
++        val https = SimHttp.parse("https://speed.cloudflare.com/__down?bytes=100000000")
++        assertTrue(https.secure)
++        assertEquals(443, https.port)
++        assertEquals("/__down?bytes=100000000", https.pathAndQuery)
++        assertEquals(80, SimHttp.parse("http://example.org").port)
++        assertEquals("/", SimHttp.parse("http://example.org").pathAndQuery)
++        assertEquals(8080, SimHttp.parse("http://127.0.0.1:8080/a").port)
++        for (bad in listOf("", "ftp://x.org/a", "not a url", "http:///nohost")) {
++            try {
++                SimHttp.parse(bad)
++                fail("expected IllegalArgumentException for '$bad'")
++            } catch (_: IllegalArgumentException) {
++            }
++        }
++    }
++
++    @Test
++    fun requestsAreHttp11WithConnectionClose() {
++        val t = SimHttp.parse("https://h.example/p?q=1")
++        val get = String(SimHttp.getRequest(t))
++        assertTrue(get.startsWith("GET /p?q=1 HTTP/1.1\r\nHost: h.example\r\n"))
++        assertTrue("Connection: close" in get && get.endsWith("\r\n\r\n"))
++        val post = String(SimHttp.postHeader(t, 123))
++        assertTrue(post.startsWith("POST /p?q=1 HTTP/1.1") && "Content-Length: 123" in post)
++    }
++
++    @Test
++    fun invalidUrlStartsNothing() {
++        val scope = scope()
++        try {
++            val sim = TrafficSimulator(scope)
++            try {
++                sim.start(SimMode.DOWN, "nope", "nope", 0)
++                fail("expected IllegalArgumentException")
++            } catch (_: IllegalArgumentException) {
++            }
++            assertFalse(sim.stats.value.running)
++        } finally { scope.cancel() }
++    }
++
++    @Test
++    fun downloadUsesThreeParallelConnectionsAndCountsBytes() {
++        val scope = scope()
++        LocalServer().use { server ->
++            try {
++                val sim = TrafficSimulator(scope)
++                sim.start(SimMode.DOWN, server.url, server.url, 0)
++                runBlocking { waitUntil(5_000) { sim.stats.value.elapsedSec >= 2 } }
++                val s = sim.stats.value
++                assertTrue("running", s.running)
++                assertTrue("totalDown=${s.totalDown}", s.totalDown > 100_000)
++                assertTrue("downBps=${s.downBps}", s.downBps > 0)
++                assertEquals(0L, s.totalUp)
++                assertEquals("parallel connections", 3, server.peak.get())
++                sim.stop()
++                assertFalse(sim.stats.value.running)
++                runBlocking { waitUntil(3_000) { server.active.get() == 0 } }
++                assertEquals("sockets closed on stop", 0, server.active.get())
++            } finally { scope.cancel() }
++        }
++    }
++
++    @Test
++    fun uploadUsesTwoParallelConnectionsAndSendsBodies() {
++        val scope = scope()
++        LocalServer().use { server ->
++            try {
++                val sim = TrafficSimulator(scope)
++                sim.start(SimMode.UP, server.url, server.url, 0)
++                runBlocking { waitUntil(5_000) { sim.stats.value.elapsedSec >= 2 } }
++                val s = sim.stats.value
++                assertTrue("totalUp=${s.totalUp}", s.totalUp > 100_000)
++                assertEquals(0L, s.totalDown)
++                assertEquals(2, server.peak.get())
++                assertTrue(server.posts.get() >= 2 && server.gets.get() == 0)
++                sim.stop()
++            } finally { scope.cancel() }
++        }
++    }
++
++    @Test
++    fun bothModeRunsFiveConnections() {
++        val scope = scope()
++        LocalServer().use { server ->
++            try {
++                val sim = TrafficSimulator(scope)
++                sim.start(SimMode.BOTH, server.url, server.url, 0)
++                runBlocking { waitUntil(5_000) { sim.stats.value.elapsedSec >= 2 } }
++                assertEquals(5, server.peak.get())
++                sim.stop()
++            } finally { scope.cancel() }
++        }
++    }
++
++    @Test
++    fun autoStopEndsTheRun() {
++        val scope = scope()
++        LocalServer().use { server ->
++            try {
++                val sim = TrafficSimulator(scope)
++                sim.start(SimMode.DOWN, server.url, server.url, 2)
++                runBlocking { waitUntil(6_000) { !sim.stats.value.running } }
++                assertFalse("auto-stop should have fired", sim.stats.value.running)
++                assertTrue(sim.stats.value.totalDown > 0)
++            } finally { scope.cancel() }
++        }
++    }
++
++    @Test
++    fun connectionFailureIsCountedNotThrown() {
++        val scope = scope()
++        try {
++            val dead = ServerSocket(0).also { it.close() } // port that nobody listens on
++            val sim = TrafficSimulator(scope)
++            sim.start(SimMode.DOWN, "http://127.0.0.1:${dead.localPort}/x", "http://127.0.0.1/", 0)
++            runBlocking { waitUntil(5_000) { sim.stats.value.errors > 0 || sim.stats.value.elapsedSec >= 2 } }
++            runBlocking { waitUntil(3_000) { sim.stats.value.elapsedSec >= 1 } }
++            assertTrue("errors=${sim.stats.value.errors}", sim.stats.value.errors > 0)
++            sim.stop()
++        } finally { scope.cancel() }
++    }
++}
+diff --git a/tools/session_start_check.sh b/tools/session_start_check.sh
+index 8d543b4..b9f62e4 100755
+--- a/tools/session_start_check.sh
++++ b/tools/session_start_check.sh
+@@ -49,8 +49,8 @@ done
+ echo "== 4. Milestone tracker (from the roadmap)"
+ grep '^| M[0-9]' docs/IMPLEMENTATION_ROADMAP.md | cut -c1-150 | while read -r line; do info "$line"; done
+ if grep -q 'FlowSupervisor' app/src/main/kotlin/dev/netvalve/network/FlowSupervisor.kt 2>/dev/null; then
+-  if grep -q 'SchedulerPacer\|pacer\.acquire' app/src/main/kotlin/dev/netvalve/network/FlowSupervisor.kt; then
+-    info "scheduler IS referenced in FlowSupervisor.kt (M3 started)"
++  if grep -q 'SchedulerController\|SchedulerPacer\|sched?\.acquire\|pacer\.acquire' app/src/main/kotlin/dev/netvalve/network/FlowSupervisor.kt; then
++    info "scheduler IS referenced in FlowSupervisor.kt (M3 code present; this does not prove it builds or works)"
+   else
+     info "scheduler is NOT referenced in FlowSupervisor.kt (M3 not started)"
+   fi

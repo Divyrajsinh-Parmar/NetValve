@@ -1,0 +1,119 @@
+diff --git a/payprobe/src/test/kotlin/dev/netvalve/payprobe/PayProbeCoreTest.kt b/payprobe/src/test/kotlin/dev/netvalve/payprobe/PayProbeCoreTest.kt
+index fee8370..437440b 100644
+--- a/payprobe/src/test/kotlin/dev/netvalve/payprobe/PayProbeCoreTest.kt
++++ b/payprobe/src/test/kotlin/dev/netvalve/payprobe/PayProbeCoreTest.kt
+@@ -1,8 +1,10 @@
+ package dev.netvalve.payprobe
+ 
+-import com.sun.net.httpserver.HttpServer
+ import java.io.File
+-import java.net.InetSocketAddress
++import java.io.IOException
++import java.net.InetAddress
++import java.net.ServerSocket
++import java.net.Socket
+ import org.junit.After
+ import org.junit.Assert.assertEquals
+ import org.junit.Assert.assertFalse
+@@ -12,20 +14,16 @@ import org.junit.Test
+ 
+ class PayProbeCoreTest {
+ 
+-    private lateinit var server: HttpServer
+-    private val baseUrl get() = "http://127.0.0.1:${server.address.port}"
++    private lateinit var server: TinyHttpServer
++    private val baseUrl get() = "http://127.0.0.1:${server.port}"
+ 
+     @Before
+     fun startServer() {
+-        server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+-        server.createContext("/ok") { ex -> ex.sendResponseHeaders(204, -1); ex.close() }
+-        server.createContext("/boom") { ex -> ex.sendResponseHeaders(500, -1); ex.close() }
+-        server.createContext("/slow") { ex -> Thread.sleep(3_000); ex.sendResponseHeaders(204, -1); ex.close() }
+-        server.start()
++        server = TinyHttpServer().also { it.start() }
+     }
+ 
+     @After
+-    fun stopServer() = server.stop(0)
++    fun stopServer() = server.stop()
+ 
+     private fun sample(i: Int, ms: Long, ok: Boolean = true) =
+         ProbeSample(i, 1_000L * i, 1_000L * i, ms, ok, if (ok) 204 else -1, if (ok) "" else "timeout")
+@@ -111,13 +109,13 @@ class PayProbeCoreTest {
+ 
+     @Test
+     fun refusedConnectionFailsFast() {
+-        val port = server.address.port
+-        server.stop(0)
++        val port = server.port
++        server.stop()
+         val r = Prober.probe("http://127.0.0.1:$port/ok", 2_000)
+         assertFalse(r.ok); assertEquals(-1, r.httpCode)
+         assertTrue(r.note.isNotEmpty())
+         assertTrue("took ${r.latencyMs}", r.latencyMs < 2_000)
+-        server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).also { it.start() } // for @After
++        server = TinyHttpServer().also { it.start() } // for @After
+     }
+ 
+     // ---- shared state -------------------------------------------------------------------------
+@@ -136,3 +134,59 @@ class PayProbeCoreTest {
+         assertEquals(0, ProbeState.all().size)
+     }
+ }
++
++/**
++ * Tiny HTTP/1.1 server on a plain ServerSocket (loopback only). The JDK's com.sun.net.httpserver is
++ * not on the Android Gradle plugin's unit-test classpath, so the tests cannot use it.
++ * Paths: /ok answers 204, /boom answers 500, /slow waits 3 s and then answers 204.
++ */
++private class TinyHttpServer {
++    private val serverSocket = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
++    val port: Int get() = serverSocket.localPort
++
++    @Volatile
++    private var stopped = false
++
++    fun start() {
++        Thread {
++            while (!stopped) {
++                val client = try {
++                    serverSocket.accept()
++                } catch (e: IOException) {
++                    break
++                }
++                Thread { handle(client) }.apply { isDaemon = true }.start()
++            }
++        }.apply { isDaemon = true }.start()
++    }
++
++    fun stop() {
++        stopped = true
++        try {
++            serverSocket.close()
++        } catch (_: IOException) {
++        }
++    }
++
++    private fun handle(client: Socket) {
++        try {
++            client.use {
++                val reader = it.getInputStream().bufferedReader(Charsets.ISO_8859_1)
++                val requestLine = reader.readLine() ?: return
++                while (true) { // read and ignore the request headers
++                    val line = reader.readLine() ?: break
++                    if (line.isEmpty()) break
++                }
++                val path = requestLine.split(' ').getOrNull(1) ?: "/"
++                if (path.startsWith("/slow")) Thread.sleep(3_000)
++                val status = if (path.startsWith("/boom")) "500 Internal Server Error" else "204 No Content"
++                it.getOutputStream().apply {
++                    write("HTTP/1.1 $status\r\nConnection: close\r\n\r\n".toByteArray(Charsets.ISO_8859_1))
++                    flush()
++                }
++            }
++        } catch (_: Exception) {
++            // client gave up (timeout test) or the server was stopped: nothing to do
++        }
++    }
++}

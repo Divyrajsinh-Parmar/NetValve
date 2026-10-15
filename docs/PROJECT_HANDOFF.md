@@ -323,3 +323,4 @@ M0 adopt and verify (done) · M1 PayProbe (done) · M2 Go/No-Go experiment (in p
 | 15 Oct 2026 | Session 9 (Mac result): PayProbe tests compile, 8 of 9 pass; `Prober` timeout notes made consistent (problem 16) | 8 |
 | 15 Oct 2026 | Session 9 (second Mac result): no PayProbe test failure reported; app unit tests 96 ran, 95 passed; simulator stop race fixed (problem 17) | 8, 9 |
 | 15 Oct 2026 | Session 9 (third Mac result): `./gradlew test --continue` BUILD SUCCESSFUL; problems 16 and 17 closed | 8, 9 |
+| 15 Oct 2026 | One-time patch scripts of Sessions 7 to 9 archived in `tools/patches/` | 15 |
