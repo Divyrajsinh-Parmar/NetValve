@@ -49,8 +49,8 @@ done
 echo "== 4. Milestone tracker (from the roadmap)"
 grep '^| M[0-9]' docs/IMPLEMENTATION_ROADMAP.md | cut -c1-150 | while read -r line; do info "$line"; done
 if grep -q 'FlowSupervisor' app/src/main/kotlin/dev/netvalve/network/FlowSupervisor.kt 2>/dev/null; then
-  if grep -q 'SchedulerPacer\|pacer\.acquire' app/src/main/kotlin/dev/netvalve/network/FlowSupervisor.kt; then
-    info "scheduler IS referenced in FlowSupervisor.kt (M3 started)"
+  if grep -q 'SchedulerController\|SchedulerPacer\|sched?\.acquire\|pacer\.acquire' app/src/main/kotlin/dev/netvalve/network/FlowSupervisor.kt; then
+    info "scheduler IS referenced in FlowSupervisor.kt (M3 code present; this does not prove it builds or works)"
   else
     info "scheduler is NOT referenced in FlowSupervisor.kt (M3 not started)"
   fi

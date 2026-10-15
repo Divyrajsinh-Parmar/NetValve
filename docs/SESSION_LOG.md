@@ -162,3 +162,29 @@ One entry per working session, oldest first. This file answers three questions: 
 **Next session, first steps:**
 1. Run `./tools/session_start_check.sh` and write the Entry check.
 2. Continue M2 from the first item under Open at end.
+
+## Session 8: 14 Oct 2026, plan change and M3 to M5 code written
+**Goal:** the student asked to change the plan: build all infrastructure first (M3 wiring, M4 tier UI, M5 simulator), test and fix afterwards, because only a few days are left.
+**Decisions:** (a) plan change accepted with the risk written down (roadmap Section 1 and 8, handoff Section 9.1). (b) Own UID counts as controlled only when NetValve is ticked in ONLY_SELECTED mode (handoff problem 15). (c) One `SchedulerController` object is given to `FlowSupervisor`. (d) UDP keeps `DROP_OLDEST`; UDP picks the scheduler on or off when a flow opens. (e) Simulator uses raw HTTP/1.1 sockets so every connection is separate.
+**Done (with evidence), checked by the AI in a sandbox on a copy of the project; the student's Mac and phone were not observed:**
+- Pure Kotlin (`scheduler/`, `sim/`) compiled with kotlinc 2.0.21 and warnings as errors.
+- 62 JVM tests pass in the sandbox with a stand-in test runner: the 36 old scheduler tests plus 26 new ones (`RateUnitsTest` 6, `TierResolverTest` 6, `SchedulerControllerTest` 6, `TrafficSimulatorTest` 8). Not run with Gradle.
+- Code written for M3, M4 and M5 as listed in handoff Section 9.1 (new and changed files).
+**Claimed, not verified:**
+- Everything Android-dependent (Hilt and KSP wiring, DataStore, Compose screens, `FlowSupervisor`, `RuleEngine`, `TrafficEngine`): never compiled with Gradle.
+- Nothing ran on the phone: Mode OFF unchanged behaviour, tier persistence, chips, High limit, simulator through the tunnel, Mode B effect on PayProbe.
+- Cloudflare `__up` accepting 25 MB POST bodies; the HTTP/1.1 raw-socket assumption on a real TLS server.
+**Problems:** the roadmap's M5 instruction (tick NetValve in the Apps list) would not have worked because of the own-UID guard in `RuleEngine`; fixed in code, see handoff problem 15.
+**Handoff state:**
+- HEAD at end: 478f4cd (the code commit and the commit that adds this entry follow it; later hashes are in `git log`)
+- Tags: pinned-base, week1-aar-built, scheduler-core, m1-payprobe-done, m2-idle-baselines-mobile
+- Tree clean: after `./tools/finish_session.sh`
+**Open at end:**
+- Build: `./gradlew test` and `./gradlew :app:assembleDebug -Pnetvalve.netstack=true` on the Mac (or `./tools/session_start_check.sh --full`); fix compile errors by pasting them to the AI.
+- Phone checks in this order: (1) stop the VPN, install, Mode OFF behaves like before; (2) tier chips and persistence, fourth High app refused; (3) tick NetValve in Apps, restart tunnel, simulator Down shows traffic; (4) then M2 and M6 on the hotspot (link speed, R, idle baselines C1, C0, C1 again, load runs).
+- Cloudflare `__up` check; smaller upstream socket buffers (roadmap risk note) not done.
+- Decide what "old project removal" means for the GitHub fork (nothing was deleted); review the untouched docs for stale statements.
+- M6 to M8 not started.
+**Next session, first steps:**
+1. Run `./tools/session_start_check.sh --full` and write the Entry check (build and test results decide what is next).
+2. Fix whatever does not compile, then the phone checks above.

@@ -10,6 +10,8 @@ import dev.netvalve.data.model.SelectionMode
 import dev.netvalve.repository.AppInfoLookup
 import dev.netvalve.repository.AppSelectionRepository
 import dev.netvalve.repository.SettingsRepository
+import dev.netvalve.scheduler.RateUnits
+import dev.netvalve.scheduler.SchedMode
 import dev.netvalve.rules.DeviceState
 import dev.netvalve.rules.DeviceStateMonitor
 import dev.netvalve.service.BatteryOptimizations
@@ -88,6 +90,18 @@ class DashboardViewModel @Inject constructor(
     fun setIpv6Mode(mode: Ipv6Mode) = update { it.copy(ipv6Mode = mode) }
     fun setExemptDns(value: Boolean) = update { it.copy(exemptDns = value) }
     fun setAutoStart(value: Boolean) = update { it.copy(autoStartOnBoot = value) }
+
+    /** Priority scheduler on/off (Mode B). Takes effect immediately; no tunnel restart needed. */
+    fun setSchedEnabled(enabled: Boolean) =
+        update { it.copy(schedMode = if (enabled) SchedMode.PRIORITY_PACER else SchedMode.OFF) }
+
+    /** Pacer rates R in Mbps (0 = that direction is not scheduled). */
+    fun setSchedRates(downMbps: Double, upMbps: Double) = update {
+        it.copy(
+            schedRateDownBytesPerSec = RateUnits.mbpsToBytesPerSec(downMbps),
+            schedRateUpBytesPerSec = RateUnits.mbpsToBytesPerSec(upMbps),
+        )
+    }
 
     /** Applying a mode change while running needs a tunnel rebuild. */
     fun applyAndMaybeRestart() {

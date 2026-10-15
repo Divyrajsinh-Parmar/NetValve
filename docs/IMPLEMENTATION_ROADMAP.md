@@ -11,7 +11,7 @@ Done and verified on a JVM (36 tests, plus a bottleneck simulation, see handoff 
 
 ## 1. The best way to finish (strategy)
 
-1. **Measure first, build second.** PayProbe (M1) and the Go/No-Go experiment (M2) need no scheduler code and tell us whether the idea pays off on this phone and network. If they say no, switch to the simulation-centred fallback early instead of after weeks of wiring.
+1. **Measure first, build second.** *(Superseded on 14 Oct 2026: with only a few days left, M3 to M5 are built first and tested afterwards; M2 and M6 are run together later. The risk is accepted.)* PayProbe (M1) and the Go/No-Go experiment (M2) need no scheduler code and tell us whether the idea pays off on this phone and network. If they say no, switch to the simulation-centred fallback early instead of after weeks of wiring.
 2. **One small wiring change, not a rewrite.** The scheduler plugs in at four call sites in `FlowSupervisor` (M3). Mode OFF must behave exactly like today.
 3. **Fixed rate R before calibration.** Pick R by hand (0.9 x measured goodput) first. On-device calibration is a stretch item (M7).
 4. **Mode B is the contribution.** Mode A stays a simulation result unless time remains (M7).
@@ -156,7 +156,7 @@ Mode and parameters: handoff Section 9 (tick 10 ms, grant 4096 B, hold 2000 ms, 
 
 ## 8. Gates and fallbacks
 
-- **After M2:** GO, GO with fixed R, or fallback.
+- **After M2 (now run together with M6 because of the 14 Oct 2026 plan change):** GO, GO with fixed R, or fallback. If the phone effect is small, M3 to M5 were built before knowing it.
 - **After M3:** if Mode B does not beat C1 on the phone in S1 after honest tuning, record the numbers and fall back.
 - **Fallback (Plan C, already largely met):** the pure-Kotlin scheduler, the 36 tests, the simulation (C1 to C5 with tables), the tier rules, PayProbe measurements of NetValve's existing static cap, and an honest analysis of why the on-device effect was small. Fully submittable.
 - **Cut list, in order:** M7 items from the bottom up; S7; S6; the Dashboard graph; C2 automation.
@@ -168,9 +168,9 @@ Mode and parameters: handoff Section 9 (tick 10 ms, grant 4096 B, hold 2000 ms, 
 | M0 | Adopt package and verify | done | 12 Oct 2026 | 36 new tests pass under Gradle; commit 3df8724, tag scheduler-core |
 | M1 | PayProbe v0 | done | 14 Oct 2026 | 9 JVM tests; runs on the phone; CSV pull and summary work; commit 4e1b6da |
 | M2 | Go/No-Go experiment | in progress | 14 Oct 2026 | idle baselines done on mobile data and WiFi (VPN overhead not measurable; noise about 66 ms p95 on WiFi, about 100 ms on mobile); link speed, R and load runs pending |
-| M3 | Wire scheduler into relay | not started | | |
-| M4 | Tier UI | not started | | |
-| M5 | In-app traffic simulator | not started | | |
+| M3 | Wire scheduler into relay | code written, not built | 14 Oct 2026 | `SchedulerController`, tier store, hooks at the 4 call sites, Dashboard card; pure parts compiled and 62 JVM tests pass in a sandbox; Android parts not built with Gradle; nothing run on the phone; `RuleEngine` own-UID change (handoff problem 15) |
+| M4 | Tier UI | code written, not built | 14 Oct 2026 | tier chips in the Apps screen, High limit message, fixed chips; not built, not run |
+| M5 | In-app traffic simulator | code written, not built | 14 Oct 2026 | Load tab, raw HTTP/1.1 sockets, 3 down + 2 up, auto-stop; tested against a local server on a JVM only; Cloudflare `__up` not verified |
 | M6 | Evaluation on the phone | not started | | |
 | M7 | Stretch items | not started | | |
 | M8 | Report, viva, demo | not started | | |

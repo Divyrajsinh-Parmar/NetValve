@@ -1,5 +1,6 @@
 package dev.netvalve.data.model
 
+import dev.netvalve.scheduler.SchedMode
 import kotlinx.serialization.Serializable
 
 /**
@@ -18,6 +19,10 @@ import kotlinx.serialization.Serializable
  * @param autoStartOnBoot    re-arm the tunnel after reboot if consent is held.
  * @param enabled            the user's desired tunnel state (persisted so the
  *                           service can be restored after process death/boot).
+ * @param schedMode          priority scheduler mode. Only PRIORITY_PACER is active on the
+ *                           device; OFF (default) keeps stock NetValve behaviour.
+ * @param schedRateDownBytesPerSec  pacer rate R for download, bytes/s. 0 = not scheduled.
+ * @param schedRateUpBytesPerSec    pacer rate R for upload, bytes/s. 0 = not scheduled.
  */
 @Serializable
 data class GlobalSettings(
@@ -29,6 +34,9 @@ data class GlobalSettings(
     val logLevel: Int = 1, // LogLevel.INFO.ordinal
     val autoStartOnBoot: Boolean = false,
     val enabled: Boolean = false,
+    val schedMode: SchedMode = SchedMode.OFF,
+    val schedRateDownBytesPerSec: Long = 0L,
+    val schedRateUpBytesPerSec: Long = 0L,
 ) {
     companion object {
         // Kept in sync with SelectionMode; ONLY_SELECTED with no default caps is

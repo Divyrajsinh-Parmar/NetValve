@@ -71,8 +71,15 @@ class RuleEngine(
 
     /** True when [uid]'s traffic should be routed/shaped under the current mode. */
     fun isControlled(uid: Int): Boolean {
-        if (uid == ownUid) return false // never shape ourselves
         val snap = snapshot.value
+        if (uid == ownUid) {
+            // Never shape ourselves by accident. Our own traffic only enters the tunnel when the user
+            // ticked NetValve in ONLY_SELECTED mode (ALL_EXCEPT always excludes our package), and that
+            // is how the in-app traffic simulator is put under the scheduler (roadmap M5). Our relay
+            // sockets are protected, so this cannot loop.
+            return snap.settings.selectionMode == SelectionMode.ONLY_SELECTED &&
+                appInfo.packagesForUid(uid).any { it in snap.selected }
+        }
         val pkgs = appInfo.packagesForUid(uid)
         if (pkgs.isEmpty()) {
             // Unknown UID: in ALL_EXCEPT it is controlled (route by default),

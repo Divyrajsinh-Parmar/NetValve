@@ -8,6 +8,7 @@ package dev.netvalve.scheduler
  *  - a shared-UID group (several packages, one UID) takes the HIGHEST tier among its packages
  *
  * Pure Kotlin so the UI and the relay can share it and tests can cover every rule.
+ * Methods are @Synchronized: relay threads read while the UI thread writes.
  */
 class TierAssignments(
     initial: Map<String, Tier> = emptyMap(),
@@ -19,16 +20,16 @@ class TierAssignments(
         initial.forEach { (pkg, tier) -> if (pkg !in locked && tier != Tier.MEDIUM) put(pkg, tier) }
     }
 
-    fun tierOf(packageName: String): Tier = locked[packageName] ?: assigned[packageName] ?: Tier.MEDIUM
+    @Synchronized fun tierOf(packageName: String): Tier = locked[packageName] ?: assigned[packageName] ?: Tier.MEDIUM
 
     /** Tier of a UID that maps to one or more packages (smallest level = most important). */
-    fun tierOfPackages(packages: Collection<String>): Tier =
+    @Synchronized fun tierOfPackages(packages: Collection<String>): Tier =
         if (packages.isEmpty()) Tier.MEDIUM else packages.map { tierOf(it) }.minByOrNull { it.level } ?: Tier.MEDIUM
 
-    fun highPackages(): Set<String> =
+    @Synchronized fun highPackages(): Set<String> =
         (assigned.filterValues { it == Tier.HIGH }.keys + locked.filterValues { it == Tier.HIGH }.keys)
 
-    fun set(packageName: String, tier: Tier): SetResult {
+    @Synchronized fun set(packageName: String, tier: Tier): SetResult {
         if (packageName in locked) return SetResult.LOCKED
         if (tier == Tier.HIGH && assigned[packageName] != Tier.HIGH && highPackages().size >= Tier.MAX_HIGH_APPS) {
             return SetResult.HIGH_FULL
@@ -38,5 +39,5 @@ class TierAssignments(
     }
 
     /** Only the explicit, non-default assignments (what should be persisted). */
-    fun snapshot(): Map<String, Tier> = assigned.toMap()
+    @Synchronized fun snapshot(): Map<String, Tier> = assigned.toMap()
 }

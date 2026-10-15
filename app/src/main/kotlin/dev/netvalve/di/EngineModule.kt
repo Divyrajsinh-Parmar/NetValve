@@ -3,6 +3,7 @@ package dev.netvalve.di
 import android.content.Context
 import android.net.ConnectivityManager
 import android.os.Process
+import android.os.SystemClock
 import dev.netvalve.data.model.SelectionMode
 import dev.netvalve.log.Logger
 import dev.netvalve.log.NetValveLogger
@@ -19,6 +20,10 @@ import dev.netvalve.repository.SettingsRepository
 import dev.netvalve.repository.StatsRepository
 import dev.netvalve.rules.DeviceStateMonitor
 import dev.netvalve.rules.RuleEngine
+import dev.netvalve.scheduler.SchedulerController
+import dev.netvalve.scheduler.SchedulerSettings
+import dev.netvalve.service.TierStore
+import dev.netvalve.sim.TrafficSimulator
 import dev.netvalve.stats.StatsCollector
 import dev.netvalve.throttle.ThrottleManager
 import dagger.Module
@@ -27,6 +32,8 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import javax.inject.Singleton
 
 /** Wires the framework-light engine singletons together. */
@@ -103,6 +110,27 @@ object EngineModule {
     @Singleton
     fun provideConnectionManager(stats: StatsCollector, logger: Logger): ConnectionManager =
         ConnectionManager(stats, logger)
+
+    /** M3: the priority scheduler, following the persisted mode and rates. */
+    @Provides
+    @Singleton
+    fun provideSchedulerController(
+        settingsRepository: SettingsRepository,
+        tierStore: TierStore,
+        @AppScope scope: CoroutineScope,
+    ): SchedulerController = SchedulerController(
+        scope = scope,
+        settings = settingsRepository.settings
+            .map { SchedulerSettings(it.schedMode, it.schedRateUpBytesPerSec, it.schedRateDownBytesPerSec) }
+            .distinctUntilChanged(),
+        tiers = tierStore.resolver,
+        nowMs = SystemClock::elapsedRealtime,
+    )
+
+    /** M5: the in-app traffic simulator (runs in the app scope so it survives screen changes). */
+    @Provides
+    @Singleton
+    fun provideTrafficSimulator(@AppScope scope: CoroutineScope): TrafficSimulator = TrafficSimulator(scope)
 
     @Provides
     @Singleton

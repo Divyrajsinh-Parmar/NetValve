@@ -15,6 +15,7 @@ import dev.netvalve.network.UidResolver
 import dev.netvalve.repository.StatsRepository
 import dev.netvalve.rules.DeviceStateMonitor
 import dev.netvalve.rules.RuleEngine
+import dev.netvalve.scheduler.SchedulerController
 import dev.netvalve.stats.StatsCollector
 import dev.netvalve.stats.StatsSnapshot
 import dev.netvalve.throttle.ThrottleManager
@@ -52,6 +53,7 @@ class TrafficEngine @Inject constructor(
     private val moduleChain: ModuleChain,
     private val statsRepository: StatsRepository,
     private val deviceStateMonitor: DeviceStateMonitor,
+    private val schedulerController: SchedulerController,
 ) {
     @Volatile var isRunning: Boolean = false
         private set
@@ -111,6 +113,7 @@ class TrafficEngine @Inject constructor(
             logger = logger,
             dnsCache = dnsCache,
             paused = { paused.get() },
+            scheduler = schedulerController,
         )
 
         val p = pipelineFactory.create()

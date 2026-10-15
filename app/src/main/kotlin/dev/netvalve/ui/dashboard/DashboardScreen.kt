@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryAlert
@@ -20,20 +21,27 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.netvalve.BuildConfig
 import dev.netvalve.data.model.Ipv6Mode
 import dev.netvalve.data.model.SelectionMode
+import dev.netvalve.scheduler.RateUnits
+import dev.netvalve.scheduler.SchedMode
 import dev.netvalve.service.TunnelState
 import dev.netvalve.ui.components.SectionCard
 import dev.netvalve.ui.components.StatTile
@@ -104,6 +112,7 @@ fun DashboardScreen(
             }
 
             item { SummaryCard(state, onOpenApps, onOpenApp) }
+            item { SchedulerCard(state, viewModel) }
             item { SettingsCard(state, viewModel) }
             item { Spacer(Modifier.height(8.dp)) }
         }
@@ -212,6 +221,63 @@ private fun SummaryCard(state: DashboardUiState, onOpenApps: () -> Unit, onOpenA
         }
         Spacer(Modifier.height(12.dp))
         Button(onClick = onOpenApps) { Text("Manage apps") }
+    }
+}
+
+@Composable
+private fun SchedulerCard(state: DashboardUiState, viewModel: DashboardViewModel) {
+    val s = state.settings
+    var downText by remember(s.schedRateDownBytesPerSec) { mutableStateOf(RateUnits.formatMbps(s.schedRateDownBytesPerSec)) }
+    var upText by remember(s.schedRateUpBytesPerSec) { mutableStateOf(RateUnits.formatMbps(s.schedRateUpBytesPerSec)) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    SectionCard(title = "Priority scheduler") {
+        LabeledSwitchRow(
+            label = "Priority scheduler (Mode B)",
+            checked = s.schedMode == SchedMode.PRIORITY_PACER,
+            onCheckedChange = { viewModel.setSchedEnabled(it) },
+        )
+        Text(
+            "When on, controlled apps share rate R by tier: High first, then Medium, then Low, and " +
+                "Low gets what is left. Set R to about 0.9 x your measured link speed. A rate of 0 " +
+                "leaves that direction unscheduled. Static per-app caps still apply on top.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = downText,
+                onValueChange = { downText = it; error = null },
+                label = { Text("R download (Mbps)") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.weight(1f),
+            )
+            OutlinedTextField(
+                value = upText,
+                onValueChange = { upText = it; error = null },
+                label = { Text("R upload (Mbps)") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = {
+            val down = RateUnits.parseMbps(downText)
+            val up = RateUnits.parseMbps(upText)
+            if (down == null || up == null) {
+                error = "Enter numbers from 0 to ${RateUnits.MAX_MBPS.toInt()} (for example 25 or 12.5)."
+            } else {
+                viewModel.setSchedRates(downMbps = down, upMbps = up)
+                error = null
+            }
+        }) { Text("Save rates") }
+        error?.let {
+            Spacer(Modifier.height(4.dp))
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
     }
 }
 

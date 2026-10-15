@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,6 +44,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.graphics.drawable.toBitmap
 import dev.netvalve.data.model.SelectionMode
+import dev.netvalve.scheduler.Tier
 import dev.netvalve.ui.components.EmptyState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -55,6 +57,7 @@ fun AppsScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val mode by viewModel.selectionMode.collectAsStateWithLifecycle()
+    val tierMessage by viewModel.tierMessage.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(title = { Text("Apps") })
@@ -78,6 +81,22 @@ fun AppsScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
         )
+
+        Text(
+            "Priority tier of a controlled app (tap the chip): High is served first (at most ${Tier.MAX_HIGH_APPS} apps), " +
+                "Medium is the default, Low gets what is left. NetValve itself is always Low and PayProbe always High.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+        )
+        tierMessage?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+            )
+        }
 
         Row(
             Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -119,6 +138,11 @@ fun AppsScreen(
                         packageName = row.app.packageName,
                         isSystem = row.app.isSystem,
                         selected = row.selected,
+                        // ONLY_SELECTED: ticked = controlled. ALL_EXCEPT: ticked = excluded.
+                        controlled = if (mode == SelectionMode.ONLY_SELECTED) row.selected else !row.selected,
+                        tier = row.tier,
+                        tierLocked = row.locked,
+                        onTierClick = { viewModel.cycleTier(row.app.packageName) },
                         onToggle = { viewModel.toggle(row.app.packageName, it) },
                         onOpen = { onOpenApp(row.app.packageName) },
                     )
@@ -134,6 +158,10 @@ private fun AppRow(
     packageName: String,
     isSystem: Boolean,
     selected: Boolean,
+    controlled: Boolean,
+    tier: Tier,
+    tierLocked: Boolean,
+    onTierClick: () -> Unit,
     onToggle: (Boolean) -> Unit,
     onOpen: () -> Unit,
 ) {
@@ -152,10 +180,32 @@ private fun AppRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (controlled) {
+                AssistChip(
+                    onClick = onTierClick,
+                    enabled = !tierLocked,
+                    label = { Text(tierLabel(tier, tierLocked)) },
+                )
+            } else {
+                Text(
+                    "Not controlled (bypasses the scheduler)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         IconButton(onClick = onOpen) { Icon(Icons.Filled.Tune, contentDescription = "Configure") }
         Checkbox(checked = selected, onCheckedChange = onToggle)
     }
+}
+
+private fun tierLabel(tier: Tier, locked: Boolean): String {
+    val name = when (tier) {
+        Tier.HIGH -> "High"
+        Tier.MEDIUM -> "Medium"
+        Tier.LOW -> "Low"
+    }
+    return if (locked) "$name (fixed)" else name
 }
 
 @Composable

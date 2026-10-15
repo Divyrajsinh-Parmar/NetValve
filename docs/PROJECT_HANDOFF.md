@@ -23,14 +23,14 @@ Give this file and `docs/IMPLEMENTATION_ROADMAP.md` (or simply the repo zip, whi
 | First fix round (usage access, protect(), Dashboard tab, app icons), reported working by the student | **done** |
 | Scheduler algorithm (Mode B core, Mode A rule, calibration maths, tier rules, coroutine adapter) with 36 unit tests | **done, verified on a JVM** |
 | Algorithm-level simulation of all modes (results in Section 10) | **done** |
-| Scheduler wired into the relay (`FlowSupervisor`) and switchable in the app | **not done** (milestone M3) |
+| Scheduler wired into the relay (`FlowSupervisor`) and switchable in the app | **code written 14 Oct 2026, not yet built with Gradle, not run on the phone** (M3, Section 9.1) |
 | PayProbe v0: separate module `payprobe/` (probe loop, CSV, live numbers, chart) plus `analysis/summarize.py` | **done (M1, 14 Oct 2026): 9 JVM tests pass, runs on the phone, CSVs come off with `adb pull` and are summarised by the script** |
-| In-app traffic simulator, tier UI | **not done** (M4, M5) |
+| In-app traffic simulator, tier UI | **code written 14 Oct 2026, not yet built with Gradle, not run on the phone** (M4, M5, Section 9.1) |
 | Idle baselines on mobile data (three VPN-on runs) | **done, 14 Oct 2026** (Section 10.1) |
 | Idle baselines on WiFi (C1, C0, C1) | **done, 14 Oct 2026** (Section 10.2) |
 | Link speed and R, load runs and the Go/No-Go decision | **not done** (M2 in progress; M6 later) |
 
-**The one-sentence truth:** the *algorithm* exists and is tested; the *phone does not use it yet*, so there is no on-device evidence that it helps. Everything running on the phone today is NetValve plus our repairs.
+**The one-sentence truth:** the *algorithm* exists and is tested; the *phone does not use it yet*, so there is no on-device evidence that it helps. (The wiring code now exists in the repository but has never been compiled with Gradle or run on the phone; see Section 9.1.) Everything running on the phone today is NetValve plus our repairs.
 
 ## 2. Aim, feasibility and theory
 
@@ -171,6 +171,7 @@ zip -r ~/Desktop/qos-priority-scheduler.zip qos-priority-scheduler -x "*/.gradle
 | 11 | **round-robin was unfair** (one flow got 8 MB, another 0.6 MB in the same tier) | a tiny floor grant used up a flow's turn | fixed in `PriorityPacerCore.serve`; found by the new unit tests |
 | 13 | First probes after pressing Start sometimes all time out (two 3-row CSVs of 5000 ms rows) | Hypothesis: the tunnel was not usable yet. Procedure now: start the VPN, wait about 10 seconds, then Start PayProbe; if the first rows are timeouts, Stop and redo the run under a new label | open; **checked 14 Oct 2026 (Session 7):** the first 10 samples of all three WiFi runs are `ok=1` (no timeouts); the only timeouts in the repo are the two 3-row mobile files, so the cause (tunnel not ready) is still a hypothesis |
 | 14 | The VPN-off (C0) idle run is missing from the data; two files labelled C1 were reported as C0 | C0 is repeated; check the VPN key icon is gone before pressing Start, and put C0 or C1 in the label | **closed 14 Oct 2026:** C0 run recorded (`C0_idle_wifi_r1`) |
+| 15 | The planned way to put the in-app simulator under the scheduler (tick NetValve in the Apps list) could not work | `RuleEngine.isControlled` returned false for our own UID ("never shape ourselves"), so our own flows were relayed unshaped and skipped the scheduler (found 14 Oct 2026 by reading the code) | changed: our own UID counts as controlled only when NetValve is ticked in ONLY_SELECTED mode (ALL_EXCEPT still excludes it). Code written, not built, not tested on the phone |
 
 ## 9. What we built: the scheduler (package `dev.netvalve.scheduler`)
 
@@ -190,6 +191,26 @@ Pure Kotlin, no Android imports, deterministic (injected clock), so it is testab
 **Mode B per tick:** (1) budget = min(carry + R x dt, 2 x R x tick); (2) floors for waiting Medium and Low; (3) strict priority for the rest: High, Medium, Low, round-robin across flows, at most one grant per turn; (4) while High is active Medium is capped at 50 percent and Low at 20 percent of R, otherwise no caps; (5) leftover is carried but never beyond the cap. Expected extra delay for High is about tick + grant/R plus kernel-buffer residue (to be measured, not assumed).
 
 **Tests (new, 36):** `PriorityPacerCoreTest` (work conservation, rate limit, strict priority shares, no starvation over 60 simulated seconds, floors ablation, caps only while High active, no caps after hold, grant size, round-robin fairness, banked-budget cap, in-place rate change, cancel, High overtakes saturating Low), `SchedulerSupportTest`, `TierAssignmentsTest`, `SchedulerPacerTest` (real-time, generous tolerances), `SchedulerSimulationTest`. Existing upstream suites: 7.
+
+### 9.1 M3 to M5 code (written 14 Oct 2026, plan change: build first, test afterwards)
+
+**Plan change (student's decision, 14 Oct 2026):** only a few days are left, so the infrastructure (M3 wiring, M4 tier UI, M5 simulator) is built first; testing, M2 measurements and fixes follow. M2 and M6 are run together later on the hotspot network (the network of the earlier WiFi idle runs is unknown). Risk accepted: if the phone effect turns out small, the M3 to M5 effort was spent before knowing.
+
+**Evidence level (read this before trusting the code).**
+- Pure Kotlin (`scheduler/` and `sim/`) compiled with kotlinc 2.0.21 with warnings as errors, and **62 JVM tests passed** (the 36 old ones plus 26 new) in an AI sandbox using a stand-in test runner, not Gradle. The traffic simulator was exercised only against a local server on a JVM.
+- Android-dependent code (Hilt modules, DataStore, Compose screens, `FlowSupervisor`, `RuleEngine`, `TrafficEngine`) has **not been compiled with Gradle**: it may contain compile errors. Nothing was run on the phone.
+
+**New pure Kotlin (package `scheduler`, no Android imports).** `SchedulerSettings` and `RateUnits` (Mbps to bytes per second, parsing and formatting), `TierResolver` (uid to tier, cached, generation counter so a stale lookup cannot be stored after a tier change), `SchedulerController` (the one object the relay calls: `newFlowId`, `isActive`, `acquire`, `releaseFlow`, `describeFlow`; follows the settings flow; mode OFF or rate 0 returns at once). `TierAssignments` methods are now `@Synchronized` (relay threads read while the UI writes). Differs from the roadmap text: one `SchedulerController` instead of passing a pacer and a resolver separately to `FlowSupervisor`.
+
+**New Android code.** `TierRepository` and `DataStoreTierRepository` (DataStore key `tiers_json`, no Room), `TierStore` (own package Low through `context.packageName`, `dev.netvalve.payprobe` High, saved tiers load asynchronously, until then everything is Medium), providers in `EngineModule` and `RepositoryModule`, `GlobalSettings` gained `schedMode`, `schedRateDownBytesPerSec`, `schedRateUpBytesPerSec` (defaults keep old stored JSON readable), `TrafficEngine` passes the controller to `FlowSupervisor` (new LAST constructor parameter, default null, so the instrumented test still compiles).
+
+**Relay (`FlowSupervisor`).** At the four sites `sched?.acquire(uid, flowId, lane, bytes)` runs before `throttleManager.pace(...)`, so static caps still apply on top. Flows that are paused, not controlled, or DNS-exempt do not take part. TCP checks the mode on every chunk. UDP upload is routed through the pacing queue only if the scheduler is on for upload when the flow opens (a mode change reaches UDP flows opened afterwards). `releaseFlow` runs in both `finally` blocks. A debug log line per flow shows tier, mode and R. Decision (roadmap item 7): UDP keeps `DROP_OLDEST`. Not done: smaller upstream socket buffers (roadmap risk note).
+
+**UI.** Dashboard card "Priority scheduler" (switch, R download and R upload in Mbps, Save rates). Apps screen: tier chip on controlled apps (tap: Medium, High, Low, Medium), High holds at most 3 apps and a fourth goes to Low with an explanation, fixed chips for our app (Low) and PayProbe (High), "Not controlled" label otherwise. New bottom tab "Load": the traffic simulator (3 parallel downloads, 2 parallel uploads, each a separate HTTP/1.1 connection over a raw socket, live rates and totals, auto-stop default 60 s). Default endpoints are `speed.cloudflare.com` `__down` and `__up`; whether `__up` accepts the 25 MB POST bodies is **not verified**. The simulator runs under our own UID, so NetValve itself must be ticked in the Apps list in ONLY_SELECTED mode.
+
+**New files.** `scheduler/SchedulerSettings.kt`, `TierResolver.kt`, `SchedulerController.kt`, `repository/TierRepository.kt`, `service/TierStore.kt`, `sim/SimHttp.kt`, `sim/TrafficSimulator.kt`, `ui/sim/SimulatorScreen.kt`, `ui/sim/SimulatorViewModel.kt`; tests `RateUnitsTest`, `TierResolverTest`, `SchedulerControllerTest`, `TrafficSimulatorTest`. Changed: `GlobalSettings`, `RuleEngine`, `FlowSupervisor`, `TrafficEngine`, `EngineModule`, `RepositoryModule`, `TierAssignments`, `AppSelectionViewModel`, `AppsScreen`, `DashboardViewModel`, `DashboardScreen`, `Navigation`.
+
+**Not verified yet:** Gradle build and KSP/Hilt wiring; DataStore persistence of tiers; that Mode OFF behaves exactly like before on the phone; chip behaviour and the High limit in the UI; the simulator on a real network and its traffic appearing as our own app and being paced as Low; whether Mode B lowers PayProbe p95 (that is the M2/M6 question).
 
 ## 10. Results so far (simulation, plus first phone baselines)
 
@@ -249,7 +270,7 @@ Reading: (1) **No sign that the tunnel adds latency at idle.** The VPN-on median
 
 ## 11. Remaining work (summary; details in the roadmap)
 
-M0 adopt and verify (done) · M1 PayProbe (done) · M2 Go/No-Go experiment (in progress: idle baselines done on mobile data and WiFi; link speed, R and load runs pending) · M3 wire the scheduler into the relay · M4 tier UI · M5 in-app traffic simulator · M6 evaluation on the phone · M7 optional stretch (on-device calibration, Mode A on device, graph, automation) · M8 report, viva, demo. The fast path is M0, M1, M2, M3, M4, M5, M6, M8.
+M0 adopt and verify (done) · M1 PayProbe (done) · M2 Go/No-Go experiment (in progress: idle baselines done on mobile data and WiFi; link speed, R and load runs pending) · M3 wire the scheduler into the relay, M4 tier UI and M5 in-app traffic simulator (code written 14 Oct 2026, not yet built with Gradle or run on the phone, Section 9.1) · M6 evaluation on the phone · M7 optional stretch (on-device calibration, Mode A on device, graph, automation) · M8 report, viva, demo. The fast path is M0, M1, M2, M3, M4, M5, M6, M8.
 
 ## 12. Risks and limitations to remember
 
@@ -294,3 +315,4 @@ M0 adopt and verify (done) · M1 PayProbe (done) · M2 Go/No-Go experiment (in p
 | 14 Oct 2026 | **Idle baselines on WiFi (C1, C0, C1) recorded:** no measurable VPN overhead at idle; WiFi p95 noise about 66 ms; problem 14 closed | 8, 10, 11 |
 | 14 Oct 2026 | Session 7 entry check: tables 10.1 and 10.2 recomputed from the CSVs (they match); problem 13 first-10-samples check; `--skip 10` rule; Section 6 commit rows corrected | 6, 8, 10 |
 | 14 Oct 2026 | Network of the WiFi idle runs is unknown (not recoverable); they are repeated on the load network | 10 |
+| 14 Oct 2026 | Plan change: M3, M4, M5 code written before M2 and M6 testing; Section 9.1 added; problem 15 (own UID never controlled) added | 1, 8, 9, 11 |

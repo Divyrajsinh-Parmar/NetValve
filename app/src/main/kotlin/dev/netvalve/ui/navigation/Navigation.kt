@@ -6,6 +6,7 @@ import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -27,6 +28,7 @@ import dev.netvalve.ui.appdetail.AppDetailScreen
 import dev.netvalve.ui.apps.AppsScreen
 import dev.netvalve.ui.dashboard.DashboardScreen
 import dev.netvalve.ui.logs.LogsScreen
+import dev.netvalve.ui.sim.SimulatorScreen
 import dev.netvalve.ui.stats.StatsScreen
 
 /**
@@ -46,10 +48,11 @@ sealed class Destination(val route: String, val label: String, val icon: ImageVe
     data object Dashboard : Destination("dashboard", "Dashboard", Icons.Filled.Shield)
     data object Apps : Destination("apps", "Apps", Icons.Filled.Apps)
     data object Stats : Destination("stats", "Stats", Icons.Filled.QueryStats)
+    data object Simulator : Destination("sim", "Load", Icons.Filled.Speed)
     data object Logs : Destination("logs", "Logs", Icons.Filled.Article)
 
     companion object {
-        val bottomBar = listOf(Dashboard, Apps, Stats, Logs)
+        val bottomBar = listOf(Dashboard, Apps, Stats, Simulator, Logs)
         fun appDetail(pkg: String) = "appdetail/$pkg"
         const val APP_DETAIL_ROUTE = "appdetail/{package}"
     }
@@ -106,6 +109,7 @@ fun NetValveNavGraph(actions: AppActions) {
                 AppsScreen(onOpenApp = { pkg -> nav.navigate(Destination.appDetail(pkg)) })
             }
             composable(Destination.Stats.route) { StatsScreen() }
+            composable(Destination.Simulator.route) { SimulatorScreen() }
             composable(Destination.Logs.route) { LogsScreen(actions = actions) }
             composable(
                 route = Destination.APP_DETAIL_ROUTE,

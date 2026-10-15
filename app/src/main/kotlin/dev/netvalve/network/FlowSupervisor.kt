@@ -7,6 +7,8 @@ import dev.netvalve.module.FlowOpenInput
 import dev.netvalve.module.FlowVerdict
 import dev.netvalve.module.ModuleChain
 import dev.netvalve.rules.RuleEngine
+import dev.netvalve.scheduler.Lane
+import dev.netvalve.scheduler.SchedulerController
 import dev.netvalve.stats.StatsCollector
 import dev.netvalve.throttle.PacingQueue
 import dev.netvalve.throttle.ThrottleManager
@@ -40,6 +42,11 @@ class FlowSupervisor(
     private val dnsCache: DnsCache,
     /** When true, new flows are relayed unshaped ("pause all"). */
     private val paused: () -> Boolean = { false },
+    /**
+     * Priority scheduler (M3). Null, mode OFF, or an unset rate = the relay behaves exactly as
+     * before: acquire() returns at once. The static caps of [throttleManager] always apply on top.
+     */
+    private val scheduler: SchedulerController? = null,
 ) : FlowHandler {
 
     override fun onTcpFlow(ctx: FlowContext, appSide: FlowStream) {
@@ -54,7 +61,8 @@ class FlowSupervisor(
 
     private suspend fun relayTcp(ctx: FlowContext, appSide: FlowStream) {
         val uid = uidResolver.resolve(ctx)
-        val verdict = if (paused() || !ruleEngine.isControlled(uid)) {
+        val unshaped = paused() || !ruleEngine.isControlled(uid)
+        val verdict = if (unshaped) {
             // Paused or not-controlled: relay unshaped so connectivity is preserved.
             FlowVerdict(blocked = false, downloadBytesPerSec = null, uploadBytesPerSec = null, warnThresholdPercent = null, tags = emptyMap())
         } else {
@@ -80,6 +88,11 @@ class FlowSupervisor(
             return
         }
 
+        // Scheduler hook: only controlled, unpaused flows take part.
+        val sched = if (unshaped) null else scheduler
+        val flowId = sched?.newFlowId() ?: 0L
+        sched?.let { logger.d(LogCategory.THROTTLE, it.describeFlow(uid, flowId), uid = uid) }
+
         val upBucket = throttleManager.bucketFor(uid, Direction.UPLOAD)
         val downBucket = throttleManager.bucketFor(uid, Direction.DOWNLOAD)
 
@@ -92,6 +105,7 @@ class FlowSupervisor(
                         val n = appSide.read(buf)
                         if (n < 0) break
                         if (n == 0) continue
+                        sched?.acquire(uid, flowId, Lane.UPLOAD, n)
                         throttleManager.pace(upBucket, n.toLong())
                         upstream.write(buf, 0, n)
                         stats.recordUpload(uid, n.toLong())
@@ -106,6 +120,7 @@ class FlowSupervisor(
                         val n = upstream.read(buf)
                         if (n < 0) break
                         if (n == 0) continue
+                        sched?.acquire(uid, flowId, Lane.DOWNLOAD, n)
                         throttleManager.pace(downBucket, n.toLong())
                         appSide.write(buf, 0, n)
                         stats.recordDownload(uid, n.toLong())
@@ -119,6 +134,7 @@ class FlowSupervisor(
         } finally {
             runCatching { upstream.close() }
             runCatching { appSide.close() }
+            sched?.releaseFlow(flowId)
             stats.onFlowClosed(uid)
             moduleChain.onFlowClose(ctx, uid)
         }
@@ -128,7 +144,8 @@ class FlowSupervisor(
 
     private suspend fun relayUdp(ctx: FlowContext, appSide: DatagramStream) {
         val uid = uidResolver.resolve(ctx)
-        val verdict = if (paused() || !ruleEngine.isControlled(uid)) {
+        val unshaped = paused() || !ruleEngine.isControlled(uid)
+        val verdict = if (unshaped) {
             FlowVerdict(blocked = false, downloadBytesPerSec = null, uploadBytesPerSec = null, warnThresholdPercent = null, tags = emptyMap())
         } else {
             moduleChain.evaluate(FlowOpenInput(ctx, uid))
@@ -153,6 +170,13 @@ class FlowSupervisor(
 
         // Paced, NOT dropped: a bounded queue smooths bursts; tail-drop is the
         // documented last resort only when the app sustainably outruns its cap.
+        // Scheduler hook (DNS stays exempt). schedUp is fixed when the flow opens: UDP upload goes
+        // through the pacing queue only if it has a static cap or the scheduler is on for upload.
+        val sched = if (unshaped || dnsExempt) null else scheduler
+        val flowId = sched?.newFlowId() ?: 0L
+        val schedUp = sched?.isActive(Lane.UPLOAD) == true
+        sched?.let { logger.d(LogCategory.THROTTLE, it.describeFlow(uid, flowId), uid = uid) }
+
         val upBucket = if (dnsExempt) null else throttleManager.bucketFor(uid, Direction.UPLOAD)
         val downBucket = if (dnsExempt) null else throttleManager.bucketFor(uid, Direction.DOWNLOAD)
         val egressQueue = PacingQueue<ByteArray>(UDP_QUEUE_BYTES, PacingQueue.DropPolicy.DROP_OLDEST)
@@ -164,7 +188,7 @@ class FlowSupervisor(
                     while (isActive) {
                         val dg = appSide.receive() ?: break
                         if (ctx.isDns) { stats.onDnsQuery() }
-                        if (upBucket == null) {
+                        if (upBucket == null && !schedUp) {
                             upstream.send(dg)
                             stats.recordUpload(uid, dg.size.toLong())
                         } else if (!egressQueue.offer(dg, dg.size.toLong())) {
@@ -173,10 +197,11 @@ class FlowSupervisor(
                     }
                 }
                 // pacer: queue -> upstream (UPLOAD)
-                if (upBucket != null) launch {
+                if (upBucket != null || schedUp) launch {
                     while (isActive) {
                         val dg = egressQueue.poll()
                         if (dg == null) { kotlinx.coroutines.delay(5); continue }
+                        sched?.acquire(uid, flowId, Lane.UPLOAD, dg.size)
                         throttleManager.pace(upBucket, dg.size.toLong())
                         upstream.send(dg)
                         stats.recordUpload(uid, dg.size.toLong())
@@ -187,6 +212,7 @@ class FlowSupervisor(
                 launch {
                     while (isActive) {
                         val data = upstream.receive() ?: break
+                        sched?.acquire(uid, flowId, Lane.DOWNLOAD, data.size)
                         throttleManager.pace(downBucket, data.size.toLong())
                         appSide.send(data)
                         stats.recordDownload(uid, data.size.toLong())
@@ -200,6 +226,7 @@ class FlowSupervisor(
         } finally {
             runCatching { upstream.close() }
             runCatching { appSide.close() }
+            sched?.releaseFlow(flowId)
             stats.onFlowClosed(uid)
             moduleChain.onFlowClose(ctx, uid)
         }

@@ -14,7 +14,9 @@ import dev.netvalve.repository.LogRepository
 import dev.netvalve.repository.PackageManagerAppRepository
 import dev.netvalve.repository.RoomLogRepository
 import dev.netvalve.repository.RoomStatsRepository
+import dev.netvalve.repository.DataStoreTierRepository
 import dev.netvalve.repository.SettingsRepository
+import dev.netvalve.repository.TierRepository
 import dev.netvalve.repository.StatsRepository
 import dev.netvalve.rules.DeviceStateMonitor
 import dev.netvalve.service.DeviceStateMonitorImpl
@@ -42,6 +44,13 @@ object RepositoryModule {
     fun provideSelectionRepository(
         dataStore: DataStore<Preferences>,
     ): AppSelectionRepository = DataStoreAppSelectionRepository(dataStore)
+
+    @Provides
+    @Singleton
+    fun provideTierRepository(
+        dataStore: DataStore<Preferences>,
+        json: Json,
+    ): TierRepository = DataStoreTierRepository(dataStore, json)
 
     @Provides
     @Singleton
