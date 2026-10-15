@@ -1,6 +1,7 @@
 package dev.netvalve.payprobe
 
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
 import java.util.concurrent.atomic.AtomicReference
 
@@ -71,11 +72,18 @@ object Prober {
             }
             ProbeResult(elapsedMs(start).coerceAtMost(timeoutMs), code in 200..399, code, "")
         } catch (e: Exception) {
-            ProbeResult(elapsedMs(start).coerceAtMost(timeoutMs), false, -1, e.javaClass.simpleName)
+            // A connect or read timeout can fire just before the hard cap in probe() does. Both are
+            // the same event for the data, so store them the same way: "timeout", at the cap.
+            val latency = if (e is SocketTimeoutException) timeoutMs else elapsedMs(start).coerceAtMost(timeoutMs)
+            ProbeResult(latency, false, -1, noteFor(e))
         } finally {
             conn?.disconnect()
         }
     }
+
+    /** "timeout" for every kind of timeout, otherwise the exception class name. */
+    internal fun noteFor(e: Exception): String =
+        if (e is SocketTimeoutException) "timeout" else e.javaClass.simpleName
 
     private fun elapsedMs(startNanos: Long): Long = (System.nanoTime() - startNanos) / 1_000_000L
 }

@@ -196,9 +196,12 @@ One entry per working session, oldest first. This file answers three questions: 
 **Done (with evidence):**
 - `:app:assembleDebug -Pnetvalve.netstack=true` and `:payprobe:assembleDebug` pass on the Mac ("both APKs build"): the M3 to M5 Android code compiles under Gradle, including Hilt, DataStore and Compose. The check runs both with `-q`, so warnings are hidden.
 - Failure found: `./gradlew test` stops at `:payprobe:compileDebugUnitTestKotlin`. `PayProbeCoreTest.kt` line 3 imports `com.sun.net.httpserver.HttpServer`, which is unresolved on the Android unit-test classpath. The error is in an M1 test, not in the new code.
-- Fix written in an AI sandbox: the test server now uses `java.net.ServerSocket` (`TinyHttpServer` at the end of `PayProbeCoreTest.kt`). 9 of 9 tests pass in the sandbox in 3 runs with a stand-in runner; the old version passed 9 of 9 there too, so the sandbox could not show the Gradle problem. Gradle result: not yet seen.
+- Fix written in an AI sandbox: the test server now uses `java.net.ServerSocket` (`TinyHttpServer` at the end of `PayProbeCoreTest.kt`). 9 of 9 tests pass in the sandbox in 3 runs with a stand-in runner; the old version passed 9 of 9 there too, so the sandbox could not show the Gradle problem. Gradle result: see the next bullets.
+- Mac output after that fix: `:payprobe` tests now compile under Gradle. 9 tests ran, 8 passed, 1 failed in task `:payprobe:testReleaseUnitTest`: `hungServerIsCutOffAtTheTimeoutAndStoredAsTheCap`, `ComparisonFailure` at `PayProbeCoreTest.kt:106`, the line that compares the stored note with "timeout". Gradle stopped there, so the app's unit tests did not run. The compiler warnings in the output (`DnsCache.kt`, `DeviceStateMonitorImpl.kt`, `LogsScreen.kt`, `Navigation.kt:52`) are not from the M3 to M5 code.
+- Hypothesis (not confirmed, the actual note was not in the output): the socket read timeout fired just before the 400 ms hard cap, so the note was the exception name instead of "timeout". In the sandbox the same test returned "timeout" 40 of 40 times, so the race could not be reproduced there.
+- Fix written in the sandbox: `Prober` stores `SocketTimeoutException` as note "timeout" at the cap (new `noteFor`), a new test `everyKindOfTimeoutIsNotedAsTimeout`, and the assertions of the failing test now print the actual note, latency and wall time. 10 of 10 pass in the sandbox in 3 runs with a stand-in runner. Gradle result of this fix: not yet seen.
 **Claimed, not verified:**
-- That the 9 PayProbe tests pass under Gradle. Earlier notes ("9 JVM tests" for M1) came from a sandbox; they had never run under Gradle.
+- That all PayProbe tests pass under Gradle: 8 of 9 passed on the Mac on 15 Oct (see above), the fix for the 9th is untested there. Earlier notes ("9 JVM tests" for M1) came from a sandbox; they had never run under Gradle.
 - Whether the app's unit tests (36 old and 26 new) compile and pass under Gradle: Gradle stopped at the PayProbe failure, so the output says nothing about them.
 - Everything on the phone (smoke checks) and all M2 and M6 measurements.
 **Decisions:** none new.
@@ -208,7 +211,7 @@ One entry per working session, oldest first. This file answers three questions: 
 - Tags: pinned-base, week1-aar-built, scheduler-core, m1-payprobe-done, m2-idle-baselines-mobile
 - Tree clean: after `./tools/finish_session.sh`
 **Open at end:**
-- Run `./gradlew test` again; if it fails, `./gradlew :app:testDebugUnitTest` shows the app tests separately. Paste errors.
+- Run `./gradlew test --continue` (so the app's unit tests also run after a PayProbe failure). Paste the summary and any failures.
 - Phone smoke checks (stop the VPN, install, Mode OFF like before; tier chips and persistence; tick NetValve, restart tunnel, simulator shows traffic), then M2 and M6 on the hotspot.
 - Cloudflare `__up` check; smaller upstream socket buffers not done; "old project removal" decision; review untouched docs.
 - M6 to M8 not started.

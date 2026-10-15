@@ -103,8 +103,17 @@ class PayProbeCoreTest {
         val t0 = System.nanoTime()
         val r = Prober.probe("$baseUrl/slow", 400)
         val wall = (System.nanoTime() - t0) / 1_000_000
-        assertFalse(r.ok); assertEquals("timeout", r.note); assertEquals(400L, r.latencyMs)
+        assertFalse(r.ok)
+        assertEquals("note=${r.note} latency=${r.latencyMs} wall=$wall ms", "timeout", r.note)
+        assertEquals("note=${r.note} latency=${r.latencyMs} wall=$wall ms", 400L, r.latencyMs)
         assertTrue("returned after $wall ms", wall in 350..1_200)
+    }
+
+    @Test
+    fun everyKindOfTimeoutIsNotedAsTimeout() {
+        assertEquals("timeout", Prober.noteFor(java.net.SocketTimeoutException("Read timed out")))
+        assertEquals("timeout", Prober.noteFor(java.net.SocketTimeoutException("connect timed out")))
+        assertEquals("ConnectException", Prober.noteFor(java.net.ConnectException("refused")))
     }
 
     @Test
