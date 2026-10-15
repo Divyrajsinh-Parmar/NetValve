@@ -316,3 +316,4 @@ M0 adopt and verify (done) · M1 PayProbe (done) · M2 Go/No-Go experiment (in p
 | 14 Oct 2026 | Session 7 entry check: tables 10.1 and 10.2 recomputed from the CSVs (they match); problem 13 first-10-samples check; `--skip 10` rule; Section 6 commit rows corrected | 6, 8, 10 |
 | 14 Oct 2026 | Network of the WiFi idle runs is unknown (not recoverable); they are repeated on the load network | 10 |
 | 14 Oct 2026 | Plan change: M3, M4, M5 code written before M2 and M6 testing; Section 9.1 added; problem 15 (own UID never controlled) added | 1, 8, 9, 11 |
+| 14 Oct 2026 | `docs/REMAINING_WORK.md` added (status, remaining work, report update list, prompts) | 15 |

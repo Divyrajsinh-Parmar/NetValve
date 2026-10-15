@@ -170,6 +170,7 @@ One entry per working session, oldest first. This file answers three questions: 
 - Pure Kotlin (`scheduler/`, `sim/`) compiled with kotlinc 2.0.21 and warnings as errors.
 - 62 JVM tests pass in the sandbox with a stand-in test runner: the 36 old scheduler tests plus 26 new ones (`RateUnitsTest` 6, `TierResolverTest` 6, `SchedulerControllerTest` 6, `TrafficSimulatorTest` 8). Not run with Gradle.
 - Code written for M3, M4 and M5 as listed in handoff Section 9.1 (new and changed files).
+- `docs/REMAINING_WORK.md` added: built versus not built, remaining work in order, which reports to update after each stage, and ready prompts for the next sessions.
 **Claimed, not verified:**
 - Everything Android-dependent (Hilt and KSP wiring, DataStore, Compose screens, `FlowSupervisor`, `RuleEngine`, `TrafficEngine`): never compiled with Gradle.
 - Nothing ran on the phone: Mode OFF unchanged behaviour, tier persistence, chips, High limit, simulator through the tunnel, Mode B effect on PayProbe.
