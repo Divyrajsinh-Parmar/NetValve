@@ -178,6 +178,24 @@ class TrafficSimulatorTest {
     }
 
     @Test
+    fun repeatedStartAndStopNeverThrows() {
+        // Regression: stop() used toList() on a concurrent set and could throw NoSuchElementException
+        // while workers removed their sockets. A stress run, so it is bounded to about 3 seconds.
+        val scope = scope()
+        LocalServer().use { server ->
+            try {
+                val sim = TrafficSimulator(scope)
+                repeat(100) { i ->
+                    sim.start(if (i % 2 == 0) SimMode.DOWN else SimMode.BOTH, server.url, server.url, 0)
+                    Thread.sleep(5L + (i % 7) * 4)
+                    sim.stop()
+                }
+                assertFalse(sim.stats.value.running)
+            } finally { scope.cancel() }
+        }
+    }
+
+    @Test
     fun autoStopEndsTheRun() {
         val scope = scope()
         LocalServer().use { server ->

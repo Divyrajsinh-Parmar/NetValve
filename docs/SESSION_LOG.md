@@ -199,10 +199,13 @@ One entry per working session, oldest first. This file answers three questions: 
 - Fix written in an AI sandbox: the test server now uses `java.net.ServerSocket` (`TinyHttpServer` at the end of `PayProbeCoreTest.kt`). 9 of 9 tests pass in the sandbox in 3 runs with a stand-in runner; the old version passed 9 of 9 there too, so the sandbox could not show the Gradle problem. Gradle result: see the next bullets.
 - Mac output after that fix: `:payprobe` tests now compile under Gradle. 9 tests ran, 8 passed, 1 failed in task `:payprobe:testReleaseUnitTest`: `hungServerIsCutOffAtTheTimeoutAndStoredAsTheCap`, `ComparisonFailure` at `PayProbeCoreTest.kt:106`, the line that compares the stored note with "timeout". Gradle stopped there, so the app's unit tests did not run. The compiler warnings in the output (`DnsCache.kt`, `DeviceStateMonitorImpl.kt`, `LogsScreen.kt`, `Navigation.kt:52`) are not from the M3 to M5 code.
 - Hypothesis (not confirmed, the actual note was not in the output): the socket read timeout fired just before the 400 ms hard cap, so the note was the exception name instead of "timeout". In the sandbox the same test returned "timeout" 40 of 40 times, so the race could not be reproduced there.
-- Fix written in the sandbox: `Prober` stores `SocketTimeoutException` as note "timeout" at the cap (new `noteFor`), a new test `everyKindOfTimeoutIsNotedAsTimeout`, and the assertions of the failing test now print the actual note, latency and wall time. 10 of 10 pass in the sandbox in 3 runs with a stand-in runner. Gradle result of this fix: not yet seen.
+- Fix written in the sandbox: `Prober` stores `SocketTimeoutException` as note "timeout" at the cap (new `noteFor`), a new test `everyKindOfTimeoutIsNotedAsTimeout`, and the assertions of the failing test now print the actual note, latency and wall time. 10 of 10 pass in the sandbox in 3 runs with a stand-in runner. Gradle result of this fix: see the next bullets.
+- Second Mac run (`./gradlew test --continue`): the output shows no PayProbe test failure; the only failing task is `:app:testDebugUnitTest`: 96 tests ran, 95 passed, 1 failed: `TrafficSimulatorTest.downloadUsesThreeParallelConnectionsAndCountsBytes` with `NoSuchElementException` at `TrafficSimulatorTest.kt:140`, the `sim.stop()` line.
+- Cause (likely, the stack trace was not in the output): `TrafficSimulator.stopInternal` used `sockets.toList()` on a concurrent set while workers removed their sockets. A sandbox demo with the same Kotlin call gave 38,489 `NoSuchElementException` in 2 million tries, none with a plain `for` loop. The race could not be reproduced inside the simulator in the sandbox (400 start/stop rounds, 3 times, no failure).
+- Fix written in the sandbox: plain `for` loop in `stopInternal` and a new stress test `repeatedStartAndStopNeverThrows` (100 start/stop rounds). 63 of 63 pure tests pass in the sandbox in 3 runs (old 36, new 27) with the stand-in runner. Gradle result of this fix: not yet seen.
 **Claimed, not verified:**
 - That all PayProbe tests pass under Gradle: 8 of 9 passed on the Mac on 15 Oct (see above), the fix for the 9th is untested there. Earlier notes ("9 JVM tests" for M1) came from a sandbox; they had never run under Gradle.
-- Whether the app's unit tests (36 old and 26 new) compile and pass under Gradle: Gradle stopped at the PayProbe failure, so the output says nothing about them.
+- Whether the simulator fix passes under Gradle. The app's other unit tests: 95 of 96 passed on the Mac (see above).
 - Everything on the phone (smoke checks) and all M2 and M6 measurements.
 **Decisions:** none new.
 **Problems:** handoff problem 16 added; Section 1, 9.1, 11, the roadmap tracker rows M3 to M5 and `REMAINING_WORK.md` now say "debug build passes" instead of "not built".
@@ -211,7 +214,7 @@ One entry per working session, oldest first. This file answers three questions: 
 - Tags: pinned-base, week1-aar-built, scheduler-core, m1-payprobe-done, m2-idle-baselines-mobile
 - Tree clean: after `./tools/finish_session.sh`
 **Open at end:**
-- Run `./gradlew test --continue` (so the app's unit tests also run after a PayProbe failure). Paste the summary and any failures.
+- Run `./gradlew test --continue` until it is green; paste the summary and any failures.
 - Phone smoke checks (stop the VPN, install, Mode OFF like before; tier chips and persistence; tick NetValve, restart tunnel, simulator shows traffic), then M2 and M6 on the hotspot.
 - Cloudflare `__up` check; smaller upstream socket buffers not done; "old project removal" decision; review untouched docs.
 - M6 to M8 not started.

@@ -88,7 +88,9 @@ class TrafficSimulator(
         job?.cancel()
         job = null
         // Blocking reads are not cancellable: closing the sockets makes them throw and end.
-        sockets.toList().forEach { runCatching { it.close() } }
+        // Plain iteration on purpose: toList() can throw NoSuchElementException when a worker
+        // removes its socket from this concurrent set at the same moment.
+        for (s in sockets) runCatching { s.close() }
         sockets.clear()
     }
 
