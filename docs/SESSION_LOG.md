@@ -153,15 +153,22 @@ One entry per working session, oldest first. This file answers three questions: 
 - HEAD at end: 478f4cd (the commit that adds this entry follows it)
 - Tags: pinned-base, week1-aar-built, scheduler-core, m1-payprobe-done, m2-idle-baselines-mobile
 - Tree clean: after `./tools/finish_session.sh`
-**Open at end:**
+**Open at end (status update below, 15 Oct 2026):**
 - M2: choose the load network (own router or hotspot), turn WiFi on and record name, band and signal; repeat the idle baselines C1, C0, C1 there (3 minutes each, `--skip 10`); measure link speed on that WiFi and set R = 0.9 x downlink; choose and test the load source (3 to 4 parallel downloads); load runs (a) no control and (b) static cap on the downloader, at least 5 repeats each; write the GO or No-Go decision in the handoff.
 - Run `./tools/session_start_check.sh --full` once to get Gradle test and build evidence for M0 and M1.
 - Decide what "old project removal" means for the GitHub fork (default branch versus deleting anything); nothing was deleted.
 - Review the untouched docs (`ARCHITECTURE`, `LIMITATIONS`, `THROTTLING` and so on) for stale statements.
 - M3 to M8 not started: the scheduler is not connected to the relay.
-**Next session, first steps:**
+**Next session, first steps (superseded by the status update below):**
 1. Run `./tools/session_start_check.sh` and write the Entry check.
 2. Continue M2 from the first item under Open at end.
+
+**Status update (15 Oct 2026, written in Session 9; the text above is left as written on 14 Oct):**
+- Resolved: "`FlowSupervisor.kt` does not use the scheduler (M3 not started)". The scheduler hooks were written in Session 8 and the debug builds of both APKs pass on the Mac (Session 9 check output). The code has not run on the phone.
+- Resolved: "no `--full` run since" and "Test passes: last Gradle output is from Session 3". `--full` ran in Session 9. The first `./gradlew test` failed because the 9 PayProbe tests did not compile under Gradle (handoff problem 16), the second run found the simulator stop race (problem 17), and the third run, `./gradlew test --continue`, ended with BUILD SUCCESSFUL. So the earlier "9 tests" for M1 were sandbox results only; they pass under Gradle since 15 Oct 2026.
+- Superseded: the M2 list under Open at end. After the plan change (Session 8) the order is: phone smoke checks first, then M2 and M6 together on the hotspot network (see `docs/REMAINING_WORK.md`).
+- Still open, unchanged: the network of the three WiFi idle runs is unknown and their setup is not visible in the CSVs; the M1 acceptance items (5-minute run, on-screen p50 and p95 versus the CSV, moving chart); problem 8 (`protect()` fix) rests on the student's report; the Session 6 GitHub screenshot and the remote tags were not checked; the installer and version of Termux; the hotspot details (model, 4G or 5G, bars, data pack); the "old project removal" decision; the review of the untouched docs; M6 to M8 not started.
+- The current list of what is left is the Open at end of the newest session entry and `docs/REMAINING_WORK.md`.
 
 ## Session 8: 14 Oct 2026, plan change and M3 to M5 code written
 **Goal:** the student asked to change the plan: build all infrastructure first (M3 wiring, M4 tier UI, M5 simulator), test and fix afterwards, because only a few days are left.
@@ -202,10 +209,10 @@ One entry per working session, oldest first. This file answers three questions: 
 - Fix written in the sandbox: `Prober` stores `SocketTimeoutException` as note "timeout" at the cap (new `noteFor`), a new test `everyKindOfTimeoutIsNotedAsTimeout`, and the assertions of the failing test now print the actual note, latency and wall time. 10 of 10 pass in the sandbox in 3 runs with a stand-in runner. Gradle result of this fix: see the next bullets.
 - Second Mac run (`./gradlew test --continue`): the output shows no PayProbe test failure; the only failing task is `:app:testDebugUnitTest`: 96 tests ran, 95 passed, 1 failed: `TrafficSimulatorTest.downloadUsesThreeParallelConnectionsAndCountsBytes` with `NoSuchElementException` at `TrafficSimulatorTest.kt:140`, the `sim.stop()` line.
 - Cause (likely, the stack trace was not in the output): `TrafficSimulator.stopInternal` used `sockets.toList()` on a concurrent set while workers removed their sockets. A sandbox demo with the same Kotlin call gave 38,489 `NoSuchElementException` in 2 million tries, none with a plain `for` loop. The race could not be reproduced inside the simulator in the sandbox (400 start/stop rounds, 3 times, no failure).
-- Fix written in the sandbox: plain `for` loop in `stopInternal` and a new stress test `repeatedStartAndStopNeverThrows` (100 start/stop rounds). 63 of 63 pure tests pass in the sandbox in 3 runs (old 36, new 27) with the stand-in runner. Gradle result of this fix: not yet seen.
+- Fix written in the sandbox: plain `for` loop in `stopInternal` and a new stress test `repeatedStartAndStopNeverThrows` (100 start/stop rounds). 63 of 63 pure tests pass in the sandbox in 3 runs (old 36, new 27) with the stand-in runner. Gradle result of this fix: third run, 15 Oct 2026, `./gradlew test --continue` on the Mac ended with `BUILD SUCCESSFUL in 1m 11s`. The pasted output showed only the end (compiler warnings from old files, a Gradle daemon metaspace warning and the BUILD line), so the exact test counts were not seen.
 **Claimed, not verified:**
 - That all PayProbe tests pass under Gradle: 8 of 9 passed on the Mac on 15 Oct (see above), the fix for the 9th is untested there. Earlier notes ("9 JVM tests" for M1) came from a sandbox; they had never run under Gradle.
-- Whether the simulator fix passes under Gradle. The app's other unit tests: 95 of 96 passed on the Mac (see above).
+- The exact number of tests in the final Gradle run (not in the pasted output). The warning that the Gradle daemon ran out of metaspace did not fail the build; its limit is 1g in `gradle.properties` (not changed).
 - Everything on the phone (smoke checks) and all M2 and M6 measurements.
 **Decisions:** none new.
 **Problems:** handoff problem 16 added; Section 1, 9.1, 11, the roadmap tracker rows M3 to M5 and `REMAINING_WORK.md` now say "debug build passes" instead of "not built".
@@ -214,10 +221,10 @@ One entry per working session, oldest first. This file answers three questions: 
 - Tags: pinned-base, week1-aar-built, scheduler-core, m1-payprobe-done, m2-idle-baselines-mobile
 - Tree clean: after `./tools/finish_session.sh`
 **Open at end:**
-- Run `./gradlew test --continue` until it is green; paste the summary and any failures.
+- Build and unit tests are green (15 Oct 2026). Optional: raise the Gradle metaspace limit (not done, not tested).
 - Phone smoke checks (stop the VPN, install, Mode OFF like before; tier chips and persistence; tick NetValve, restart tunnel, simulator shows traffic), then M2 and M6 on the hotspot.
 - Cloudflare `__up` check; smaller upstream socket buffers not done; "old project removal" decision; review untouched docs.
 - M6 to M8 not started.
 **Next session, first steps:**
 1. Run `./tools/session_start_check.sh --full` and write the Entry check.
-2. Fix whatever still fails in `./gradlew test`, then the phone checks.
+2. Phone smoke checks (see Open at end), then M2 and M6 on the hotspot.
