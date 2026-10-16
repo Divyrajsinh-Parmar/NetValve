@@ -229,3 +229,25 @@ One entry per working session, oldest first. This file answers three questions: 
 **Next session, first steps:**
 1. Run `./tools/session_start_check.sh --full` and write the Entry check.
 2. Phone smoke checks (see Open at end), then M2 and M6 on the hotspot.
+
+## Session 10: 15 Oct 2026, first phone smoke check
+**Goal:** put the new APKs on the phone and check the first things by hand (REMAINING_WORK item 2).
+**Entry check:** not re-run in this part of the session; the last full check output is in Session 9.
+**Done (reported by the student in the chat; no terminal output, screenshot or file for these):**
+- The student chose a fresh install (uninstall first, so saved settings and tiers are reset) and reported that the new versions of both apps (`dev.netvalve.debug`, `dev.netvalve.payprobe`) are on the phone. The outputs of the CSV backup, the uninstall and the install commands were not shown here, so it is not known whether the CSV backup (`~/Desktop/payprobe_phone_backup`) was made.
+- First open of NetValve: the Dashboard scheduler card was OFF with R = 0; the Apps list showed NetValve and PayProbe; ticking PayProbe showed the fixed High chip; Start brought the VPN permission popup, then the key icon; the browser worked with the tunnel on.
+**Claimed, not verified:**
+- Everything above (student-reported only).
+- Scheduler ON behaviour, tier persistence after an app restart, the fourth High app being refused, the Load tab, the per-flow debug log line, and all measurements.
+**Decisions:** fresh uninstall chosen by the student (settings and tiers reset).
+**Problems:** none found yet.
+**Handoff state:**
+- HEAD at end: 8d84169 (later commits of Session 9 and the commit that adds this entry follow it)
+- Tags: pinned-base, week1-aar-built, scheduler-core, m1-payprobe-done, m2-idle-baselines-mobile
+- Tree clean: after `./tools/finish_session.sh`
+**Open at end:**
+- Phone smoke checks still to do: scheduler OFF run with PayProbe (CSV label and network noted), tier chips after an app restart and the fourth High app, Load tab with NetValve ticked.
+- Then M2 and M6 on the hotspot (see `docs/REMAINING_WORK.md`).
+**Next session, first steps:**
+1. Run `./tools/session_start_check.sh` and write the Entry check.
+2. Continue the phone smoke checks from the first item under Open at end.
