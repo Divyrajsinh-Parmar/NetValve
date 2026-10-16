@@ -230,23 +230,31 @@ One entry per working session, oldest first. This file answers three questions: 
 1. Run `./tools/session_start_check.sh --full` and write the Entry check.
 2. Phone smoke checks (see Open at end), then M2 and M6 on the hotspot.
 
-## Session 10: 15 Oct 2026, first phone smoke check
+## Session 10: 15 to 16 Oct 2026, first phone smoke check
 **Goal:** put the new APKs on the phone and check the first things by hand (REMAINING_WORK item 2).
 **Entry check:** not re-run in this part of the session; the last full check output is in Session 9.
 **Done (reported by the student in the chat; no terminal output, screenshot or file for these):**
 - The student chose a fresh install (uninstall first, so saved settings and tiers are reset) and reported that the new versions of both apps (`dev.netvalve.debug`, `dev.netvalve.payprobe`) are on the phone. The outputs of the CSV backup, the uninstall and the install commands were not shown here, so it is not known whether the CSV backup (`~/Desktop/payprobe_phone_backup`) was made.
 - First open of NetValve: the Dashboard scheduler card was OFF with R = 0; the Apps list showed NetValve and PayProbe; ticking PayProbe showed the fixed High chip; Start brought the VPN permission popup, then the key icon; the browser worked with the tunnel on.
+- Second part, 16 Oct 2026, from the student's screenshots (`SMOKE_TEST.pdf`, not in the repo) and terminal output: three PayProbe runs through the tunnel with the scheduler OFF and PayProbe ticked, 0 failures in each. Labels as stored: `SMOKE_off__mobile_r1` (mobile data, 5G icon, no WiFi icon), `SMOKE_off__Wifi_r1` (WiFi named "GUEST" in the quick-settings screenshot; the student says it is the college WiFi), `SMOKE_off__hotspot_r1` (the test phone itself was the hotspot host; the quick-settings screenshot shows 1 device connected at 3:44 pm). The labels have a double underscore because the student typed the angle brackets of the template and the app replaced them. CSVs: `docs/data/smoke_2026-10-16/`.
+- `summarize.py --skip 10` (n, p50, p95, p99, max, mean in ms): mobile 81, 242, 292, 458, 458, 246; WiFi 81, 117, 324, 473, 473, 133; hotspot 82, 223, 259, 347, 347, 221. On-screen numbers after Stop (all samples): mobile n=91, p50 243, p95 318, p99 500, max 500, mean 253; WiFi n=91, 115, 324, 473, 473, 130; hotspot n=92, 222, 265, 379, 379, 220. The sample counts agree (91 = 81 + 10, 92 = 82 + 10). The percentiles cannot be compared yet, because the screen uses all samples and the table skips 10; `--skip 0` is the exact check.
+- Settings screenshots (3:38 pm, before the mobile run): Dashboard shows "Protected", the scheduler switch OFF, R = 0 and 0, one controlled app (PayProbe); the Apps list shows PayProbe ticked with the fixed High chip and the other apps labelled "Not controlled (bypasses the scheduler)". The quick-settings screenshots show the VPN pill at 3:41 pm and 3:44 pm.
 **Claimed, not verified:**
-- Everything above (student-reported only).
+- Everything above (student-reported only), except the numbers and screenshots listed in the second part.
+- That PayProbe traffic really went through the tunnel: NetValve showed 0 B/s and 0 active flows at 3:38 pm when no probe was running, and there is no screenshot of NetValve during a run.
+- That the chart moves live (the screenshots are taken after Stop). The scheduler state during the WiFi and hotspot runs (not shown again; the student says it stayed OFF) and the VPN at 3:46 pm (no key icon visible in that status bar; the VPN pill at 3:44 pm shows it was on two minutes earlier).
+- How the new APKs were installed: the pull returned the CSVs of 14 Oct as well (10 files, 95,639 bytes), so PayProbe's data folder survived; probably it was replaced, not uninstalled (hypothesis). The student ran the install commands without checking their output and does not know whether the uninstall ran. One likely cause is a flaw in the command block given in the chat: only the uninstall was inside the backup guard, so the `adb install -r` lines ran even when the guard printed STOP (if `~/Desktop/payprobe_phone_backup` was empty or missing). Whether that backup folder exists was not checked.
+- That the hotspot run matches the plan: the plan was the test phone connected to another phone's hotspot; here the test phone was the host. Whether the friend's traffic was in NetValve's tunnel (probably not, tethered traffic is not routed through the app's VPN: hypothesis) and how much the friend used during the run are unknown.
 - Scheduler ON behaviour, tier persistence after an app restart, the fourth High app being refused, the Load tab, the per-flow debug log line, and all measurements.
 **Decisions:** fresh uninstall chosen by the student (settings and tiers reset).
-**Problems:** none found yet.
+**Problems:** the Step 3 and 4 command block in the chat installed the APKs with `adb install -r` even when the uninstall guard stopped (flaw in the instruction, found 16 Oct 2026 from the old CSVs still on the phone); cosmetic problem 18 (handoff Section 8).
 **Handoff state:**
 - HEAD at end: 8d84169 (later commits of Session 9 and the commit that adds this entry follow it)
 - Tags: pinned-base, week1-aar-built, scheduler-core, m1-payprobe-done, m2-idle-baselines-mobile
 - Tree clean: after `./tools/finish_session.sh`
 **Open at end:**
-- Phone smoke checks still to do: scheduler OFF run with PayProbe (CSV label and network noted), tier chips after an app restart and the fourth High app, Load tab with NetValve ticked.
+- Phone smoke checks still to do: `--skip 0` check of the on-screen numbers against the CSVs; proof that PayProbe traffic goes through the tunnel (NetValve Stats or Dashboard during a run); tier chips after an app restart, NetValve's fixed Low chip and the fourth High app; Load tab with NetValve ticked; scheduler ON.
+- Mobile p50 on 16 Oct (242 to 243 ms) is about 35 ms above the three C1 mobile runs of 14 Oct (200, 208, 204 ms); the cause is unknown (hypothesis: signal or time of day, or the new build). A C0 and C1 pair on the same network, back to back, is the test.
 - Then M2 and M6 on the hotspot (see `docs/REMAINING_WORK.md`).
 **Next session, first steps:**
 1. Run `./tools/session_start_check.sh` and write the Entry check.

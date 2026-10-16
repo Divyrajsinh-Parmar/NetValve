@@ -174,6 +174,7 @@ zip -r ~/Desktop/qos-priority-scheduler.zip qos-priority-scheduler -x "*/.gradle
 | 15 | The planned way to put the in-app simulator under the scheduler (tick NetValve in the Apps list) could not work | `RuleEngine.isControlled` returned false for our own UID ("never shape ourselves"), so our own flows were relayed unshaped and skipped the scheduler (found 14 Oct 2026 by reading the code) | changed: our own UID counts as controlled only when NetValve is ticked in ONLY_SELECTED mode (ALL_EXCEPT still excludes it). Code written, not built, not tested on the phone |
 | 16 | `./gradlew test` failed in `:payprobe:compileDebugUnitTestKotlin` (found 15 Oct 2026 from the Mac output) | `PayProbeCoreTest.kt` imported the JDK class `com.sun.net.httpserver.HttpServer`, which is not on the Android Gradle unit-test classpath; the 9 PayProbe tests had therefore only ever run in a sandbox, never under Gradle | test server rewritten on a plain `java.net.ServerSocket` (`TinyHttpServer`); 9 of 9 pass in a sandbox in 3 runs with a stand-in runner. Gradle result 15 Oct 2026 (Mac): the tests compile and 8 of 9 pass; `hungServerIsCutOffAtTheTimeoutAndStoredAsTheCap` failed on its note check. `Prober` now stores every kind of timeout (hard cap, connect, read) as "timeout" at the cap, and a new test covers it; Gradle result: `./gradlew test --continue` ended with BUILD SUCCESSFUL on the Mac (15 Oct 2026, third run) |
 | 17 | `TrafficSimulatorTest.downloadUsesThreeParallelConnectionsAndCountsBytes` failed under Gradle with `NoSuchElementException` at the `sim.stop()` line (15 Oct 2026, Mac output) | `TrafficSimulator.stopInternal` called `sockets.toList()` on a concurrent set while worker threads removed their sockets; Kotlin's `toList()` can throw `NoSuchElementException` in that moment (a small sandbox demo gave 38,489 failures in 2 million tries, none with a plain loop). It is a real bug that could hit the Stop button. The stack trace itself was not seen, so the link to this exact line is likely, not proven | changed to a plain `for` loop and added a 100-round start/stop stress test; 63 of 63 pure tests pass in the sandbox in 3 runs (the race itself could not be reproduced in the simulator there). Gradle result: `./gradlew test --continue` ended with BUILD SUCCESSFUL on the Mac (15 Oct 2026, third run) |
+| 18 | Cosmetic: the bottom-bar label "Dashboard" wraps onto two lines ("Dashboa" / "rd") on the phone | seen in the student's screenshots on 16 Oct 2026; likely because the Load tab made it five tabs (not checked in the code) | open, not fixed |
 
 ## 9. What we built: the scheduler (package `dev.netvalve.scheduler`)
 
@@ -270,6 +271,18 @@ Setup as instructed: WiFi on, mobile data off, phone untouched, 3 minutes each, 
 
 Reading: (1) **No sign that the tunnel adds latency at idle.** The VPN-on medians (193 and 202) are 12 to 21 ms *lower* than the single VPN-off median (214), but the two VPN-on runs differ from each other by 9 ms and the means are close (215 versus 219 and 205). This is not evidence that the VPN is faster; with one C0 run the honest statement is "no measurable overhead". This replaces point (3) of Section 10.1 (no C0 run existed then). The overhead gets a proper number in M6, with at least 5 runs per condition. (2) **Noise floor on WiFi:** two identical VPN-on runs differ by 66 ms at p95 (268 versus 334) and one run has a short slow patch (p99 1164, max 1548). Medians spread by about 21 ms. A later effect must be far larger than that, must use medians over at least 5 runs, and must not rely on p99 or max. (3) WiFi did not give a lower median than mobile data in these runs (mobile 200 to 208, WiFi 193 to 214); the probe is a fresh HTTPS request to a remote server every second, so the whole transaction time, not only the local link, is measured.
 
+### 10.3 Smoke runs, scheduler OFF, tunnel ON (16 Oct 2026, phone, PayProbe only, no load)
+
+Source: the student's screenshots (`SMOKE_TEST.pdf`, not in the repo) and `analysis/summarize.py --skip 10` on `docs/data/smoke_2026-10-16/`. One run of about 90 s per network, 0 failures in each. These are smoke checks, not measurements: one run each, different networks, so they say nothing about the effect of the tunnel or the scheduler.
+
+| Label as stored | Network | On-screen (all samples): n, p50, p95 | `--skip 10`: n, p50, p95, p99, max, mean |
+|---|---|---|---|
+| `SMOKE_off__mobile_r1` | mobile data (5G) | 91, 243, 318 | 81, 242, 292, 458, 458, 246 |
+| `SMOKE_off__Wifi_r1` | WiFi "GUEST" (student: college WiFi) | 91, 115, 324 | 81, 117, 324, 473, 473, 133 |
+| `SMOKE_off__hotspot_r1` | test phone as hotspot host, 1 device connected at set-up (not the planned setup) | 92, 222, 265 | 82, 223, 259, 347, 347, 221 |
+
+Observations (hypotheses, not conclusions): the mobile p50 is about 35 ms above the three C1 mobile runs of 14 Oct (200, 208, 204 ms); the WiFi run has a much lower p50 but a spiky tail (p95 324, max 473). The p50 of the WiFi runs of 14 Oct (about 193 to 214 ms) is far from today's 115 ms, which fits the fact that the network of the 14 Oct WiFi runs is unknown.
+
 ## 11. Remaining work (summary; details in the roadmap)
 
 M0 adopt and verify (done) · M1 PayProbe (done) · M2 Go/No-Go experiment (in progress: idle baselines done on mobile data and WiFi; link speed, R and load runs pending) · M3 wire the scheduler into the relay, M4 tier UI and M5 in-app traffic simulator (code written 14 Oct 2026, debug build passes on the Mac 15 Oct, not run on the phone, Section 9.1) · M6 evaluation on the phone · M7 optional stretch (on-device calibration, Mode A on device, graph, automation) · M8 report, viva, demo. The fast path is M0, M1, M2, M3, M4, M5, M6, M8.
@@ -324,4 +337,5 @@ M0 adopt and verify (done) · M1 PayProbe (done) · M2 Go/No-Go experiment (in p
 | 15 Oct 2026 | Session 9 (second Mac result): no PayProbe test failure reported; app unit tests 96 ran, 95 passed; simulator stop race fixed (problem 17) | 8, 9 |
 | 15 Oct 2026 | Session 9 (third Mac result): `./gradlew test --continue` BUILD SUCCESSFUL; problems 16 and 17 closed | 8, 9 |
 | 15 Oct 2026 | Session 10: first phone check (fresh install, first open, tunnel start), student-reported | 9 |
+| 16 Oct 2026 | Session 10: three smoke runs with the scheduler OFF (mobile, WiFi, hotspot host) recorded in Section 10.3; problem 18 (cosmetic) added | 8, 10 |
 | 15 Oct 2026 | One-time patch scripts of Sessions 7 to 9 archived in `tools/patches/` | 15 |
