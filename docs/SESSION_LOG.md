@@ -259,3 +259,30 @@ One entry per working session, oldest first. This file answers three questions: 
 **Next session, first steps:**
 1. Run `./tools/session_start_check.sh` and write the Entry check.
 2. Continue the phone smoke checks from the first item under Open at end.
+
+## Session 11: 16 Oct 2026, names, Home and PayProbe screens, experiment guide
+**Goal:** the student asked for a better Home (dashboard) and PayProbe screen, a clearer name than "Priority scheduler (Mode B)", and a step-by-step guide for the next phone runs (settings, entries, when to switch what on). Testing by the AI was to be kept small.
+**Entry check:** not re-run in this part of the session; the newest check output is in Session 9.
+**Decisions:** (a) the app says Priority Control and Shared speed; the report says priority pacer (Mode B) and rate R (handoff 9.2). (b) The Dashboard tab is renamed Home (fixes problem 18 in code). (c) PayProbe gets a run length so repeated runs are equally long. (d) The Load tab shows Mbps and the run average. (e) `summarize.py` gets a time window.
+**Done (with evidence), checked by the AI in a sandbox:**
+- Code written: new Home screen, `SetupChecklist` (pure), 90% and Mbps helpers in `RateUnits`, tiers on the controlled-apps chips, a colour option for `SectionCard`, PayProbe screen and run length, Load tab Mbps lines, tab and label renames, `summarize.py --from-sec --to-sec`. List of files: see the code patch `home_ui_code.patch` (archive in `tools/patches/` if you archive it).
+- 74 JVM tests pass in the sandbox with a stand-in runner (63 earlier plus 11 new: 9 checklist and 90% helper, 2 Mbps helpers). Not run with Gradle.
+- `summarize.py --from-sec 10 --to-sec 70` on `payprobe_C1_idle_wifi_r1_20261014_142925.csv` gave n = 60, equal to an independent count; `--skip 10` still gives n = 173 and p50 = 193 as in handoff 10.2.
+- Guide written: `docs/HOW_TO_RUN_EXPERIMENT.md`.
+**Claimed, not verified:**
+- The Compose and View code compiles and works: it was only syntax-checked (no Android libraries in the sandbox), never built with Gradle, never seen on the phone; whether the new screens look good is unknown.
+- PayProbe's run-length stop (`stopSelf` after N seconds), the "Saved as" preview and the Load tab Mbps lines on the phone.
+- The expectations in the guide (Priority Control keeps PayProbe's p95 near idle) are hypotheses.
+**Problems:** none new found; problem 18 (tab label wraps) is fixed in code only.
+**Handoff state:**
+- HEAD at end: 8d84169 (later commits of Sessions 9 and 10 and the commit that adds this entry follow it)
+- Tags: pinned-base, week1-aar-built, scheduler-core, m1-payprobe-done, m2-idle-baselines-mobile
+- Tree clean: after `./tools/finish_session.sh`
+**Open at end:**
+- Build both APKs (`./gradlew :app:assembleDebug -Pnetvalve.netstack=true :payprobe:assembleDebug`) and `./gradlew test --continue`; paste compile errors if any.
+- Install (stop the VPN first) and look at the Home, Load and PayProbe screens; report what looks wrong.
+- Then the phone smoke checks left in Session 10, then the experiment in `docs/HOW_TO_RUN_EXPERIMENT.md`.
+- M6 to M8 not started.
+**Next session, first steps:**
+1. Run `./tools/session_start_check.sh --full` and write the Entry check.
+2. Fix any build error, then the screens on the phone.

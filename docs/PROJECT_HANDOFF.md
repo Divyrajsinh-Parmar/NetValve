@@ -174,7 +174,7 @@ zip -r ~/Desktop/qos-priority-scheduler.zip qos-priority-scheduler -x "*/.gradle
 | 15 | The planned way to put the in-app simulator under the scheduler (tick NetValve in the Apps list) could not work | `RuleEngine.isControlled` returned false for our own UID ("never shape ourselves"), so our own flows were relayed unshaped and skipped the scheduler (found 14 Oct 2026 by reading the code) | changed: our own UID counts as controlled only when NetValve is ticked in ONLY_SELECTED mode (ALL_EXCEPT still excludes it). Code written, not built, not tested on the phone |
 | 16 | `./gradlew test` failed in `:payprobe:compileDebugUnitTestKotlin` (found 15 Oct 2026 from the Mac output) | `PayProbeCoreTest.kt` imported the JDK class `com.sun.net.httpserver.HttpServer`, which is not on the Android Gradle unit-test classpath; the 9 PayProbe tests had therefore only ever run in a sandbox, never under Gradle | test server rewritten on a plain `java.net.ServerSocket` (`TinyHttpServer`); 9 of 9 pass in a sandbox in 3 runs with a stand-in runner. Gradle result 15 Oct 2026 (Mac): the tests compile and 8 of 9 pass; `hungServerIsCutOffAtTheTimeoutAndStoredAsTheCap` failed on its note check. `Prober` now stores every kind of timeout (hard cap, connect, read) as "timeout" at the cap, and a new test covers it; Gradle result: `./gradlew test --continue` ended with BUILD SUCCESSFUL on the Mac (15 Oct 2026, third run) |
 | 17 | `TrafficSimulatorTest.downloadUsesThreeParallelConnectionsAndCountsBytes` failed under Gradle with `NoSuchElementException` at the `sim.stop()` line (15 Oct 2026, Mac output) | `TrafficSimulator.stopInternal` called `sockets.toList()` on a concurrent set while worker threads removed their sockets; Kotlin's `toList()` can throw `NoSuchElementException` in that moment (a small sandbox demo gave 38,489 failures in 2 million tries, none with a plain loop). It is a real bug that could hit the Stop button. The stack trace itself was not seen, so the link to this exact line is likely, not proven | changed to a plain `for` loop and added a 100-round start/stop stress test; 63 of 63 pure tests pass in the sandbox in 3 runs (the race itself could not be reproduced in the simulator there). Gradle result: `./gradlew test --continue` ended with BUILD SUCCESSFUL on the Mac (15 Oct 2026, third run) |
-| 18 | Cosmetic: the bottom-bar label "Dashboard" wraps onto two lines ("Dashboa" / "rd") on the phone | seen in the student's screenshots on 16 Oct 2026; likely because the Load tab made it five tabs (not checked in the code) | open, not fixed |
+| 18 | Cosmetic: the bottom-bar label "Dashboard" wraps onto two lines ("Dashboa" / "rd") on the phone | seen in the student's screenshots on 16 Oct 2026; likely because the Load tab made it five tabs (not checked in the code) | label renamed to "Home" in the code (Session 11); not yet seen on the phone |
 
 ## 9. What we built: the scheduler (package `dev.netvalve.scheduler`)
 
@@ -214,6 +214,21 @@ Pure Kotlin, no Android imports, deterministic (injected clock), so it is testab
 **New files.** `scheduler/SchedulerSettings.kt`, `TierResolver.kt`, `SchedulerController.kt`, `repository/TierRepository.kt`, `service/TierStore.kt`, `sim/SimHttp.kt`, `sim/TrafficSimulator.kt`, `ui/sim/SimulatorScreen.kt`, `ui/sim/SimulatorViewModel.kt`; tests `RateUnitsTest`, `TierResolverTest`, `SchedulerControllerTest`, `TrafficSimulatorTest`. Changed: `GlobalSettings`, `RuleEngine`, `FlowSupervisor`, `TrafficEngine`, `EngineModule`, `RepositoryModule`, `TierAssignments`, `AppSelectionViewModel`, `AppsScreen`, `DashboardViewModel`, `DashboardScreen`, `Navigation`.
 
 **Not verified yet:** Gradle build and KSP/Hilt wiring; DataStore persistence of tiers; that Mode OFF behaves exactly like before on the phone; chip behaviour and the High limit in the UI; the simulator on a real network and its traffic appearing as our own app and being paced as Low; whether Mode B lowers PayProbe p95 (that is the M2/M6 question).
+
+### 9.2 Names, and the Home and PayProbe screens (Session 11, 16 Oct 2026; code written, not yet built or seen on the phone)
+
+**Names.** The student found "Priority scheduler (Mode B)" confusing. Decision: the app says **Priority Control**; the report says **priority pacer (Mode B)** so it stays distinct from the simulation-only Mode A. R is called **Shared speed** in the app. The tabs are Home (was Dashboard, which wrapped onto two lines), Apps, Stats, Load, Logs.
+
+| In the app | In the report |
+|---|---|
+| Priority Control | priority pacer, Mode B |
+| Shared speed | rate R (set to about 0.9 x the measured link speed) |
+| High / Medium / Low | tiers |
+| Load tab | in-app traffic simulator (the "Low app") |
+
+**Home screen (redesigned).** One big Start or Stop protection button with live download, upload and connections; a setup checklist (tunnel running, only picked apps controlled, apps ticked, shared speed set, Priority Control ON) whose rules are in the pure class `SetupChecklist` and are unit tested; a Priority Control card (switch, plain explanation, measured speed to "Use 90% as shared speed", exact values under an advanced button); controlled apps shown with their tier; tunnel settings in plain words. The Load tab now also shows speed in Mbps and the average of the run, to make the link-speed measurement easy. **PayProbe screen (redesigned):** how-to box, run name with "Saved as" preview, run length in seconds (the service stops by itself, so repeated runs are equally long), coloured status, big numbers (p50, p95, failures, samples), chart, file path. `analysis/summarize.py` gained `--from-sec` and `--to-sec` (cut by elapsed time).
+
+**Evidence level:** the pure Kotlin parts (checklist, 90% helper, Mbps helpers) compiled and 74 JVM tests passed in an AI sandbox with a stand-in runner; `summarize.py --from-sec 10 --to-sec 70` gave 60 rows on a real CSV, equal to an independent count, and `--skip 10` still gives the numbers of handoff 10.2. The Compose and View code was only syntax-checked: it has not been built with Gradle, never run on the phone, and its look has not been seen. The step-by-step experiment guide is `docs/HOW_TO_RUN_EXPERIMENT.md`.
 
 ## 10. Results so far (simulation, plus first phone baselines)
 
@@ -338,4 +353,5 @@ M0 adopt and verify (done) · M1 PayProbe (done) · M2 Go/No-Go experiment (in p
 | 15 Oct 2026 | Session 9 (third Mac result): `./gradlew test --continue` BUILD SUCCESSFUL; problems 16 and 17 closed | 8, 9 |
 | 15 Oct 2026 | Session 10: first phone check (fresh install, first open, tunnel start), student-reported | 9 |
 | 16 Oct 2026 | Session 10: three smoke runs with the scheduler OFF (mobile, WiFi, hotspot host) recorded in Section 10.3; problem 18 (cosmetic) added | 8, 10 |
+| 16 Oct 2026 | Session 11: names (Priority Control), Home and PayProbe screens redesigned (code only), summarize.py time window, experiment guide; Section 9.2 added | 8, 9 |
 | 15 Oct 2026 | One-time patch scripts of Sessions 7 to 9 archived in `tools/patches/` | 15 |

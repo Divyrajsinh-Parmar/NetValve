@@ -188,7 +188,7 @@ private fun AppRow(
                 )
             } else {
                 Text(
-                    "Not controlled (bypasses the scheduler)",
+                    "Not controlled (Priority Control does not apply)",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

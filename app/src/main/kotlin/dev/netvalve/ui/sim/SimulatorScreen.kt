@@ -27,6 +27,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.netvalve.scheduler.RateUnits
 import dev.netvalve.sim.SimMode
 import dev.netvalve.sim.TrafficSimulator
 import dev.netvalve.ui.components.SectionCard
@@ -115,6 +116,20 @@ fun SimulatorScreen(viewModel: SimulatorViewModel = hiltViewModel()) {
                         StatTile("Upload", Format.rate(stats.upBps))
                         StatTile("Errors", stats.errors.toString())
                     }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Speed now: ${RateUnits.mbpsText(stats.downBps)} down · ${RateUnits.mbpsText(stats.upBps)} up",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        "Average this run: " +
+                            String.format(java.util.Locale.ROOT, "%.1f", RateUnits.averageMbps(stats.totalDown, stats.elapsedSec)) +
+                            " Mbps down · " +
+                            String.format(java.util.Locale.ROOT, "%.1f", RateUnits.averageMbps(stats.totalUp, stats.elapsedSec)) +
+                            " Mbps up",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
                     Spacer(Modifier.height(8.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         StatTile("Total down", Format.bytes(stats.totalDown))

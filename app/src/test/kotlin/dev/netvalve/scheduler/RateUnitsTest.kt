@@ -44,6 +44,21 @@ class RateUnitsTest {
     }
 
     @Test
+    fun mbpsTextUsesDecimalMegabits() {
+        assertEquals("8.0 Mbps", RateUnits.mbpsText(1_000_000L))
+        assertEquals("0.0 Mbps", RateUnits.mbpsText(0L))
+        assertEquals("0.0 Mbps", RateUnits.mbpsText(-5L))
+        assertEquals("21.0 Mbps", RateUnits.mbpsText(2_625_000L))
+    }
+
+    @Test
+    fun averageMbpsIsTotalOverSeconds() {
+        assertEquals(8.0, RateUnits.averageMbps(10_000_000L, 10), 1e-9)
+        assertEquals(0.0, RateUnits.averageMbps(10_000_000L, 0), 1e-9)
+        assertEquals(0.0, RateUnits.averageMbps(-1L, 5), 1e-9)
+    }
+
+    @Test
     fun settingsActiveOnlyForPacerModeWithRate() {
         val s = SchedulerSettings(SchedMode.PRIORITY_PACER, rateUpBytesPerSec = 0L, rateDownBytesPerSec = 500_000L)
         assertFalse(s.activeFor(Lane.UPLOAD))

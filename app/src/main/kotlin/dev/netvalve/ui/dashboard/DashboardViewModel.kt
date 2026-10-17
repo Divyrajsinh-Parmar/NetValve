@@ -12,6 +12,8 @@ import dev.netvalve.repository.AppSelectionRepository
 import dev.netvalve.repository.SettingsRepository
 import dev.netvalve.scheduler.RateUnits
 import dev.netvalve.scheduler.SchedMode
+import dev.netvalve.scheduler.Tier
+import dev.netvalve.service.TierStore
 import dev.netvalve.rules.DeviceState
 import dev.netvalve.rules.DeviceStateMonitor
 import dev.netvalve.service.BatteryOptimizations
@@ -29,7 +31,13 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-data class ControlledAppRow(val packageName: String, val label: String, val rule: AppRule?)
+data class ControlledAppRow(
+    val packageName: String,
+    val label: String,
+    val rule: AppRule?,
+    /** Priority tier shown on the Home screen (fixed for NetValve and PayProbe). */
+    val tier: Tier = Tier.MEDIUM,
+)
 
 data class DashboardUiState(
     val status: VpnStatus = VpnStatus(),
@@ -52,6 +60,7 @@ class DashboardViewModel @Inject constructor(
     private val selectionRepository: AppSelectionRepository,
     private val statsCollector: StatsCollector,
     private val appInfo: AppInfoLookup,
+    private val tierStore: TierStore,
     deviceStateMonitor: DeviceStateMonitor,
 ) : ViewModel() {
 
@@ -80,6 +89,11 @@ class DashboardViewModel @Inject constructor(
                 device = p.device,
                 ignoringBatteryOptimizations = BatteryOptimizations.isIgnoringBatteryOptimizations(context),
             )
+        }.combine(tierStore.tiers) { state, _ ->
+            // Re-read the tiers whenever an assignment changes (or the saved ones finish loading).
+            state.copy(
+                controlledApps = state.controlledApps.map { it.copy(tier = tierStore.tierOfPackage(it.packageName)) },
+            )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
 
     fun pauseResume() {
@@ -91,11 +105,11 @@ class DashboardViewModel @Inject constructor(
     fun setExemptDns(value: Boolean) = update { it.copy(exemptDns = value) }
     fun setAutoStart(value: Boolean) = update { it.copy(autoStartOnBoot = value) }
 
-    /** Priority scheduler on/off (Mode B). Takes effect immediately; no tunnel restart needed. */
+    /** Priority Control on/off (technical name: priority pacer, Mode B). Takes effect immediately; no tunnel restart needed. */
     fun setSchedEnabled(enabled: Boolean) =
         update { it.copy(schedMode = if (enabled) SchedMode.PRIORITY_PACER else SchedMode.OFF) }
 
-    /** Pacer rates R in Mbps (0 = that direction is not scheduled). */
+    /** Shared speed (the pacer rate R) in Mbps; 0 = that direction is not scheduled. */
     fun setSchedRates(downMbps: Double, upMbps: Double) = update {
         it.copy(
             schedRateDownBytesPerSec = RateUnits.mbpsToBytesPerSec(downMbps),

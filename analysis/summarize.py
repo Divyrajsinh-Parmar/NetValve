@@ -5,6 +5,7 @@ Usage:
     python3 analysis/summarize.py docs/data/runs/            # every payprobe_*.csv in a folder
     python3 analysis/summarize.py a.csv b.csv --md           # Markdown table for the report
     python3 analysis/summarize.py runs/ --by label           # pool all files that share a label
+    python3 analysis/summarize.py runs/ --from-sec 10 --to-sec 70   # only seconds 10 to 70 of every run
 
 Percentiles use the nearest-rank method, exactly like the app, and failures (timeouts stored
 as 5000 ms) are INCLUDED, because a request that waited five seconds was delayed five seconds.
@@ -60,6 +61,10 @@ def main(argv=None):
     ap.add_argument("--by", choices=["file", "label"], default="file", help="one row per file (default) or per label")
     ap.add_argument("--md", action="store_true", help="print a Markdown table")
     ap.add_argument("--skip", type=int, default=0, help="ignore the first N samples of every run (warm-up)")
+    ap.add_argument("--from-sec", type=float, default=None,
+                    help="keep only samples at or after this many seconds since the run started (elapsed_ms)")
+    ap.add_argument("--to-sec", type=float, default=None,
+                    help="keep only samples before this many seconds since the run started (elapsed_ms)")
     args = ap.parse_args(argv)
 
     files = collect(args.paths)
@@ -69,7 +74,13 @@ def main(argv=None):
 
     groups = {}
     for path in files:
-        rows = read_rows(path)[args.skip:]
+        rows = read_rows(path)
+        # The time window comes first (it cuts by elapsed time), then --skip drops the first N of what is left.
+        if args.from_sec is not None:
+            rows = [r for r in rows if int(r["elapsed_ms"]) >= args.from_sec * 1000]
+        if args.to_sec is not None:
+            rows = [r for r in rows if int(r["elapsed_ms"]) < args.to_sec * 1000]
+        rows = rows[args.skip:]
         if not rows:
             continue
         key = os.path.basename(path) if args.by == "file" else rows[0].get("label", "?")

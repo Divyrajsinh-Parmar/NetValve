@@ -45,7 +45,7 @@ data class AppActions(
 )
 
 sealed class Destination(val route: String, val label: String, val icon: ImageVector) {
-    data object Dashboard : Destination("dashboard", "Dashboard", Icons.Filled.Shield)
+    data object Dashboard : Destination("dashboard", "Home", Icons.Filled.Shield)
     data object Apps : Destination("apps", "Apps", Icons.Filled.Apps)
     data object Stats : Destination("stats", "Stats", Icons.Filled.QueryStats)
     data object Simulator : Destination("sim", "Load", Icons.Filled.Speed)

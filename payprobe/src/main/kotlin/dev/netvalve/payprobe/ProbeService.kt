@@ -51,6 +51,9 @@ class ProbeService : Service() {
         val ex = Executors.newSingleThreadScheduledExecutor()
         executor = ex
         ex.scheduleAtFixedRate({ runOnce() }, 0L, intervalMs, TimeUnit.MILLISECONDS)
+        // Optional fixed run length, so repeated runs are exactly as long as each other.
+        val durationSec = intent?.getIntExtra(EXTRA_DURATION_S, 0) ?: 0
+        if (durationSec > 0) ex.schedule({ stopSelf() }, durationSec.toLong(), TimeUnit.SECONDS)
         return START_NOT_STICKY
     }
 
@@ -128,6 +131,7 @@ class ProbeService : Service() {
         const val EXTRA_URL = "url"
         const val EXTRA_LABEL = "label"
         const val EXTRA_INTERVAL_MS = "interval_ms"
+        const val EXTRA_DURATION_S = "duration_s"
         const val DEFAULT_URL = "https://connectivitycheck.gstatic.com/generate_204"
         const val DEFAULT_INTERVAL_MS = 1_000L
         private const val CHANNEL_ID = "payprobe"

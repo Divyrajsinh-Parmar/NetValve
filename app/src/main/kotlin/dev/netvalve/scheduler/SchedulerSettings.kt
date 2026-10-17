@@ -47,4 +47,27 @@ object RateUnits {
     }
 
     const val MAX_MBPS = 10_000.0
+
+    /** "21.3 Mbps" from a rate in bytes per second (decimal megabits, the unit speed tests use). */
+    fun mbpsText(bytesPerSec: Long): String =
+        String.format(Locale.ROOT, "%.1f Mbps", bytesPerSec.coerceAtLeast(0L) * 8.0 / 1_000_000.0)
+
+    /** Average speed of a run in Mbps: total bytes over the elapsed seconds (0 when no time has passed). */
+    fun averageMbps(totalBytes: Long, seconds: Int): Double =
+        if (seconds <= 0) 0.0 else totalBytes.coerceAtLeast(0L) * 8.0 / 1_000_000.0 / seconds
+
+    /** The shared speed is set to this part of the measured link speed (roadmap: R = 0.9 x link speed). */
+    const val SHARE_FRACTION = 0.9
+
+    /**
+     * From what a person typed as the measured speed ("25") to the text for the shared-speed box
+     * ("22.5"): 90 % rounded to one decimal. Null when the text is not a positive number or the
+     * result would round to 0.
+     */
+    fun shareTextOf(measuredText: String): String? {
+        val measured = parseMbps(measuredText) ?: return null
+        val share = Math.round(measured * SHARE_FRACTION * 10.0) / 10.0
+        if (share <= 0.0) return null
+        return formatMbps(mbpsToBytesPerSec(share))
+    }
 }
