@@ -135,7 +135,10 @@ class TrafficSimulator(
                         statusChecked = true
                         // Without this check a server that answers 403 or 429 with a small page would count as a download with no error.
                         val bad = SimHttp.badStatus(buf, n)
-                        if (bad != null) throw IOException("HTTP status: $bad")
+                        if (bad != null) {
+                            val hint = SimHttp.bodyHint(buf, n)
+                            throw IOException("HTTP status: $bad" + if (hint.isEmpty()) "" else " | $hint")
+                        }
                     }
                     downBytes.addAndGet(n.toLong())
                 }

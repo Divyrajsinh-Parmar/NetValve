@@ -330,3 +330,10 @@ One entry per working session, oldest first. This file answers three questions: 
 - Reading the code: the download loop never checked the status line, so a small non-200 answer counts as a download. Hypothesis only; the cause of the small totals is not known.
 - Code written: `SimHttp.badStatus`, status check and "no data" error in `TrafficSimulator.downloadLoop`, 2 new tests (`statusLineCheck`, `nonOkAnswerIsAnErrorNotADownload`). Not built in the AI sandbox.
 - Open: build and run the tests; one Load Download run on mobile data with Protection ON; read the new "Last error".
+
+**Update 3, 18 Oct 2026 (fifth part of Session 12): the 403 and the first working Load run**
+- Student-reported (screenshots 02:35, 02:39, 02:41; mobile data, Wi-Fi OFF, Protection ON, auto-stop 20): Cloudflare `__down?bytes=100000000`: Errors 87, Total down 0 B, Last error "IOException: HTTP status: HTTP/1.1 403 Forbidden". A run with a mistyped host (`speed.test.tele2.net`): UnknownHostException (typing error). `http://speedtest.tele2.net/100MB.zip`: Average 5.4 Mbps down, Total down 12.8 MB, Errors 0, status bar showed 1.30 MB/s at that moment.
+- What this shows: the Load tab traffic of NetValve itself goes through the tunnel and the relay forwards it over IPv4 on mobile data (a server answer came back through the tunnel). The 403 comes from the server. Small totals of the earlier runs (64.8 KB, 85.3 KB, Errors 0) fit small 403 pages counted as downloads (the fourth part added the status check). Still a hypothesis: the User-Agent is the reason for the 403.
+- Not known: the real link speed of the phone's mobile data (the Tele2 server is far; 5.4 Mbps may be below the link); whether Cloudflare accepts `curl/8.5.0`; the Cloudflare `__up` upload.
+- Code written: User-Agent `curl/8.5.0`; `SimHttp.bodyHint` and the body text in the error; 1 new test. Not built in the AI sandbox.
+- Open: build and test; one Cloudflare Download run on mobile data; decide the network for the experiment (the friend's hotspot has no IPv4; mobile data works).

@@ -221,6 +221,16 @@ class TrafficSimulatorTest {
     }
 
     @Test
+    fun bodyHintShowsTheStartOfTheBody() {
+        val a = "HTTP/1.1 403 Forbidden\r\nServer: x\r\n\r\nerror code: 1010"
+        assertEquals("error code: 1010", SimHttp.bodyHint(a.toByteArray(), a.length))
+        val b = "HTTP/1.1 403 Forbidden\r\nServer: x\r\n\r\n"
+        assertEquals("", SimHttp.bodyHint(b.toByteArray(), b.length))
+        val c = "HTTP/1.1 403 Forbidden\r\nServer: x"
+        assertEquals("", SimHttp.bodyHint(c.toByteArray(), c.length))
+    }
+
+    @Test
     fun nonOkAnswerIsAnErrorNotADownload() {
         val server = ServerSocket(0)
         Thread {

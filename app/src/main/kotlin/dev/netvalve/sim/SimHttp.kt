@@ -18,6 +18,13 @@ internal object SimHttp {
 
     class Target(val secure: Boolean, val host: String, val port: Int, val pathAndQuery: String)
 
+    /**
+     * Sent as User-Agent. The old "NetValve-Sim" got "403 Forbidden" from speed.cloudflare.com
+     * (a bot check on unknown agents is the likely cause, not proven). Command-line speed tests
+     * identify themselves like this one.
+     */
+    private const val USER_AGENT = "curl/8.5.0"
+
     /** @throws IllegalArgumentException for anything but a valid http or https URL. */
     fun parse(url: String): Target {
         val uri = try {
@@ -36,11 +43,11 @@ internal object SimHttp {
     }
 
     fun getRequest(t: Target): ByteArray =
-        ("GET ${t.pathAndQuery} HTTP/1.1\r\nHost: ${hostHeader(t)}\r\nUser-Agent: NetValve-Sim\r\n" +
+        ("GET ${t.pathAndQuery} HTTP/1.1\r\nHost: ${hostHeader(t)}\r\nUser-Agent: ${USER_AGENT}\r\n" +
             "Accept: */*\r\nConnection: close\r\n\r\n").toByteArray(Charsets.US_ASCII)
 
     fun postHeader(t: Target, contentLength: Long): ByteArray =
-        ("POST ${t.pathAndQuery} HTTP/1.1\r\nHost: ${hostHeader(t)}\r\nUser-Agent: NetValve-Sim\r\n" +
+        ("POST ${t.pathAndQuery} HTTP/1.1\r\nHost: ${hostHeader(t)}\r\nUser-Agent: ${USER_AGENT}\r\n" +
             "Content-Type: application/octet-stream\r\nContent-Length: $contentLength\r\n" +
             "Connection: close\r\n\r\n").toByteArray(Charsets.US_ASCII)
 
@@ -61,6 +68,15 @@ internal object SimHttp {
         val code = if (parts.size >= 2) parts[1] else ""
         if (line.startsWith("HTTP/1.") && (code == "200" || code == "206")) return null
         return line.take(60)
+    }
+
+    /** First characters of the answer body (for example "error code: 1010"), or an empty string when there is none yet. */
+    fun bodyHint(buf: ByteArray, len: Int): String {
+        val text = String(buf, 0, len, Charsets.ISO_8859_1)
+        val at = text.indexOf("\r\n\r\n")
+        if (at < 0) return ""
+        val body = text.substring(at + 4).take(60)
+        return body.map { if (it.code < 32 || it.code > 126) ' ' else it }.joinToString("").trim()
     }
 
     /** Opens a NEW connection (TLS for https, with hostname check). The caller closes it. */
