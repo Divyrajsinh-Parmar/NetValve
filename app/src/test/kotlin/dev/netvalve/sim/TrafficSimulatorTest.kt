@@ -8,6 +8,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -206,6 +207,56 @@ class TrafficSimulatorTest {
                 assertFalse("auto-stop should have fired", sim.stats.value.running)
                 assertTrue(sim.stats.value.totalDown > 0)
             } finally { scope.cancel() }
+        }
+    }
+
+    @Test
+    fun statusLineCheck() {
+        fun bad(s: String) = SimHttp.badStatus(s.toByteArray(), s.length)
+        assertNull(bad("HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\n"))
+        assertNull(bad("HTTP/1.1 206 Partial Content\r\n\r\n"))
+        assertNull(bad("HTTP"))
+        assertEquals("HTTP/1.1 403 Forbidden", bad("HTTP/1.1 403 Forbidden\r\nServer: x\r\n\r\n"))
+        assertEquals("HTTP/1.1 429 Too Many Requests", bad("HTTP/1.1 429 Too Many Requests\r\n\r\n"))
+    }
+
+    @Test
+    fun nonOkAnswerIsAnErrorNotADownload() {
+        val server = ServerSocket(0)
+        Thread {
+            while (!server.isClosed) {
+                val s = try { server.accept() } catch (e: Exception) { break }
+                try {
+                    val inp = s.getInputStream()
+                    val head = StringBuilder()
+                    while (!head.endsWith("\r\n\r\n")) {
+                        val b = inp.read()
+                        if (b < 0) break
+                        head.append(b.toChar())
+                    }
+                    s.getOutputStream().apply {
+                        write("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
+                        flush()
+                    }
+                } catch (_: Exception) {
+                } finally {
+                    runCatching { s.close() }
+                }
+            }
+        }.apply { isDaemon = true; start() }
+        val scope = scope()
+        try {
+            val sim = TrafficSimulator(scope)
+            sim.start(SimMode.DOWN, "http://127.0.0.1:${server.localPort}/x", "http://127.0.0.1/", 0)
+            runBlocking { waitUntil(5_000) { sim.stats.value.errors > 0 } }
+            val st = sim.stats.value
+            sim.stop()
+            assertTrue("errors=${st.errors}", st.errors > 0)
+            assertTrue("lastError=${st.lastError}", st.lastError?.contains("403") == true)
+            assertEquals(0L, st.totalDown)
+        } finally {
+            runCatching { server.close() }
+            scope.cancel()
         }
     }
 

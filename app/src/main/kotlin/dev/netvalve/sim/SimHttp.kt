@@ -49,6 +49,20 @@ internal object SimHttp {
         return if (t.port == default) t.host else "${t.host}:${t.port}"
     }
 
+    /**
+     * Looks at the first bytes of an answer. Returns the status line when it is not 200 or 206,
+     * and null when the answer is fine (or too short to judge).
+     */
+    fun badStatus(buf: ByteArray, len: Int): String? {
+        if (len < 12) return null
+        val text = String(buf, 0, minOf(len, 80), Charsets.ISO_8859_1)
+        val line = text.substringBefore('\n').trimEnd('\r')
+        val parts = line.split(' ')
+        val code = if (parts.size >= 2) parts[1] else ""
+        if (line.startsWith("HTTP/1.") && (code == "200" || code == "206")) return null
+        return line.take(60)
+    }
+
     /** Opens a NEW connection (TLS for https, with hostname check). The caller closes it. */
     fun open(t: Target, connectTimeoutMs: Int = 10_000, readTimeoutMs: Int = 15_000): Socket {
         val plain = Socket()

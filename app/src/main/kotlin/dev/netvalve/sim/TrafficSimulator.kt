@@ -127,11 +127,19 @@ class TrafficSimulator(
                 sockets.add(s)
                 s.getOutputStream().apply { write(SimHttp.getRequest(t)); flush() }
                 val input = s.getInputStream()
+                var statusChecked = false
                 while (running) {
                     val n = input.read(buf)
                     if (n < 0) break
+                    if (!statusChecked) {
+                        statusChecked = true
+                        // Without this check a server that answers 403 or 429 with a small page would count as a download with no error.
+                        val bad = SimHttp.badStatus(buf, n)
+                        if (bad != null) throw IOException("HTTP status: $bad")
+                    }
                     downBytes.addAndGet(n.toLong())
                 }
+                if (!statusChecked && running) throw IOException("Server closed the connection without sending data")
             } catch (e: IOException) {
                 if (running) noteError(e)
             } finally {
