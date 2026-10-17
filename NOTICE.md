@@ -22,7 +22,7 @@ The original README and developer handoff are kept for reference in `docs/upstre
 ### Bug fixes and UI changes
 | File | Change |
 |---|---|
-| `network/ConnectionManager.kt` | bind the TCP socket before `protect()` (hypothesis: `protect()` failed on a socket without a file descriptor) |
+| `network/ConnectionManager.kt` | bind the TCP socket before `protect()` (hypothesis: `protect()` failed on a socket without a file descriptor); 18 Oct 2026: NAT64 fallback for IPv4 destinations that are unreachable (dials `64:ff9b::<IPv4>`), failed sockets are closed |
 | `ui/navigation/Navigation.kt` | `switchTab` helper so the Dashboard tab works from every screen |
 | `ui/apps/AppsScreen.kt`, `ui/apps/AppSelectionViewModel.kt` | real app icons, explanation of what a tick means, Tick all / Clear all |
 
@@ -31,6 +31,9 @@ The original README and developer handoff are kept for reference in `docs/upstre
 `SchedulerPacer.kt`, `TierAssignments.kt` (pure Kotlin, no Android imports), with unit tests and a
 bottleneck simulator in `app/src/test/kotlin/dev/netvalve/scheduler/`.
 Simulation output: `docs/data/`.
+
+### New code in the relay package
+`app/src/main/kotlin/dev/netvalve/network/Nat64.kt` (NAT64 address helpers and the IPv4 path memory, our own code) with `app/src/test/kotlin/dev/netvalve/network/Nat64Test.kt`.
 
 ### New module and tools
 `payprobe/` (separate Gradle module and APK, our own code, no upstream code) and

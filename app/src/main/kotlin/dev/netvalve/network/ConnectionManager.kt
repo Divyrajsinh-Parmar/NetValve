@@ -5,6 +5,7 @@ import dev.netvalve.log.Logger
 import dev.netvalve.stats.StatsCollector
 import java.net.DatagramPacket
 import java.net.DatagramSocket
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
 
@@ -22,8 +23,41 @@ class ConnectionManager(
     private val stats: StatsCollector,
     private val logger: Logger,
     private val connectTimeoutMillis: Int = 10_000,
+    private val ipv4Memory: Ipv4PathMemory = Ipv4PathMemory(),
 ) {
     fun connectTcp(ctx: FlowContext, protector: SocketProtector): TcpUpstream {
+        val destination = ctx.destinationAddress
+        val canTranslate = Nat64.isEligible(destination)
+
+        // An earlier IPv4 dial failed as unreachable and NAT64 worked: go to NAT64 first.
+        if (canTranslate && ipv4Memory.preferNat64()) {
+            try {
+                return dialTcp(Nat64.synthesize(destination), ctx, protector)
+            } catch (t: Throwable) {
+                logger.d(LogCategory.ERROR, "NAT64 dial failed ${ctx.shortKey()}: ${t.message}; trying IPv4")
+            }
+        }
+
+        return try {
+            dialTcp(destination, ctx, protector)
+        } catch (t: Throwable) {
+            // Only "no route" errors lead to NAT64; refused connections and timeouts keep their old behaviour.
+            if (!canTranslate || !Nat64.isUnreachable(t)) throw t
+            val upstream = try {
+                dialTcp(Nat64.synthesize(destination), ctx, protector)
+            } catch (t2: Throwable) {
+                logger.d(LogCategory.ERROR, "NAT64 fallback failed ${ctx.shortKey()}: ${t2.message}")
+                throw t // report the original IPv4 error
+            }
+            if (ipv4Memory.markIpv4Broken()) {
+                logger.i(LogCategory.ERROR, "IPv4 unreachable, using NAT64 (64:ff9b::/96) for IPv4 destinations; first: ${ctx.shortKey()}")
+            }
+            upstream
+        }
+    }
+
+    /** One TCP dial to [destination] on the flow's port. The socket is closed again when the connect fails. */
+    private fun dialTcp(destination: InetAddress, ctx: FlowContext, protector: SocketProtector): TcpUpstream {
         val socket = Socket()
         // java.net.Socket creates its OS socket lazily, so protect() sees no valid
         // file descriptor and returns false. Bind first to force the fd to exist.
@@ -33,8 +67,13 @@ class ConnectionManager(
             logger.w(LogCategory.ERROR, "protect() failed for ${ctx.shortKey()}")
         }
         val started = System.nanoTime()
-        socket.tcpNoDelay = true
-        socket.connect(InetSocketAddress(ctx.destinationAddress, ctx.destinationPort), connectTimeoutMillis)
+        try {
+            socket.tcpNoDelay = true
+            socket.connect(InetSocketAddress(destination, ctx.destinationPort), connectTimeoutMillis)
+        } catch (t: Throwable) {
+            runCatching { socket.close() }
+            throw t
+        }
         val latencyMs = (System.nanoTime() - started) / 1_000_000
         stats.recordConnectLatency(latencyMs)
         return TcpUpstream(socket)
