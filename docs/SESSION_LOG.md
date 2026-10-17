@@ -286,3 +286,29 @@ One entry per working session, oldest first. This file answers three questions: 
 **Next session, first steps:**
 1. Run `./tools/session_start_check.sh --full` and write the Entry check.
 2. Fix any build error, then the screens on the phone.
+
+## Session 12: 17 Oct 2026, new screens seen on the phone, small UI fixes
+**Goal:** check the Session 11 screens from the student's screenshots and fix the small things found (the student chose "fix now").
+**Entry check:** `./tools/session_start_check.sh` (quick mode, AI sandbox copy of `qos-priority-scheduler-20261017-1318.zip`): 16 ok, 2 warnings (the two known 3-row mobile CSVs); the phone section was skipped (no adb in the sandbox). HEAD `939d4f0` "Session 11: ...", branch `qos-scheduler`, tree clean, tags pinned-base, week1-aar-built, scheduler-core, m1-payprobe-done, m2-idle-baselines-mobile. `docs/HOW_TO_RUN_EXPERIMENT.md` in the zip is identical to the file the student uploaded. The student's `git status -sb` showed `## qos-scheduler...origin/qos-scheduler` (nothing ahead; local tracking ref, not a live query of GitHub).
+**Done (with evidence):**
+- Student-reported from the pasted chat of the old account (terminal output not seen by the AI): both debug APKs built with BUILD SUCCESSFUL (30 s) and `./gradlew test --continue` ended BUILD SUCCESSFUL (1 m 12 s) for the Session 11 code.
+- Screenshots `94323.pdf` (6 pages, phone clock 1:24 to 1:26): Home with Protection OFF, checklist "2 of 5 done", Priority Control card (switch OFF, shared speed 0 and 0, measured-speed fields, "Use 90% as shared speed"), Controlled apps (only PayProbe, High 1 / Medium 0 / Low 0), Tunnel settings (first three ON, auto start OFF, as in the guide); PayProbe with the how-to box, run name test, "Saved as: test", 90, the URL, READY, empty chart and the data path. No text was cut off and the bottom bar shows "Home" on one line.
+- Found: problem 19 (handoff Section 8): checklist green with NetValve unticked, PayProbe fields without labels once filled, status line with zeros and no samples. The OFF switch of Priority Control looks very dim in the screenshots (not changed).
+- Code written (read against the real files; checklist rule has a default parameter so the old tests still compile): `SetupChecklist.evaluate(..., ownAppTicked = true)` gives a WARN "Also tick NetValve (for the Load test)" in only-selected mode; `DashboardUiState.ownAppTicked` filled from the ticked list and the app's own package name; PayProbe label above each of the three fields; PayProbe status line shows "-" with no samples; 2 new tests in `SetupChecklistTest`.
+**Claimed, not verified:**
+- That the Session 12 code compiles and its tests pass: not built (no Gradle or Kotlin compiler in the AI sandbox). Run the Gradle build and test commands of Session 11 first.
+- What the changed screens look like; the Load tab, the Apps tab (tier chips, NetValve "Low (fixed)"), the PayProbe stop after 90 s, "Saved as" after a real run, and all of the experiment.
+- The Mac build result of Session 11 (see above) was not seen as terminal output by the AI.
+**Decisions:** small fixes now (student's choice); the dim OFF switch is left as it is.
+**Problems:** problem 19 (cosmetic).
+**Handoff state:**
+- HEAD at end: 939d4f0 (the commit that adds this entry follows it)
+- Tags: pinned-base, week1-aar-built, scheduler-core, m1-payprobe-done, m2-idle-baselines-mobile
+- Tree clean: after `./tools/finish_session.sh`
+**Open at end:**
+- Build both APKs and run `./gradlew test --continue` again; install (stop the VPN first); in the Apps tab tick PayProbe and NetValve; look at the Apps and Load tabs and send screenshots.
+- Then link-speed measurement and the runs in `docs/HOW_TO_RUN_EXPERIMENT.md` (Sections 3 and 4); the Session 10 smoke checks that are still open.
+- M6 to M8 not started.
+**Next session, first steps:**
+1. Run `./tools/session_start_check.sh --full` and write the Entry check.
+2. Fix any build error, then the Apps and Load tabs on the phone, then the speed measurement.

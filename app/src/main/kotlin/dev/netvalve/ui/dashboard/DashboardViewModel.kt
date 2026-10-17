@@ -48,6 +48,8 @@ data class DashboardUiState(
     val activeRuleCount: Int = 0,
     val device: DeviceState = DeviceState(),
     val ignoringBatteryOptimizations: Boolean = true,
+    /** True when NetValve itself is in the ticked list (needed for the Load tab test). */
+    val ownAppTicked: Boolean = true,
 ) {
     val running: Boolean get() = status.isActive
 }
@@ -88,6 +90,7 @@ class DashboardViewModel @Inject constructor(
                 activeRuleCount = rules.values.count { it.isActive },
                 device = p.device,
                 ignoringBatteryOptimizations = BatteryOptimizations.isIgnoringBatteryOptimizations(context),
+                ownAppTicked = p.selected.contains(context.packageName),
             )
         }.combine(tierStore.tiers) { state, _ ->
             // Re-read the tiers whenever an assignment changes (or the saved ones finish loading).

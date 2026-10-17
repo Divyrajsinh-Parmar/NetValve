@@ -79,6 +79,7 @@ fun DashboardScreen(
         priorityOn = state.settings.schedMode == SchedMode.PRIORITY_PACER,
         sharedDownBytesPerSec = state.settings.schedRateDownBytesPerSec,
         sharedUpBytesPerSec = state.settings.schedRateUpBytesPerSec,
+        ownAppTicked = state.ownAppTicked,
     )
 
     Column(Modifier.fillMaxSize()) {

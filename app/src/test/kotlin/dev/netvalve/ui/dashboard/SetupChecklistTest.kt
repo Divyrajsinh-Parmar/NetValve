@@ -16,7 +16,8 @@ class SetupChecklistTest {
         priorityOn: Boolean = true,
         down: Long = 1_000_000L,
         up: Long = 500_000L,
-    ) = SetupChecklist.evaluate(running, onlySelected, apps, priorityOn, down, up)
+        ownApp: Boolean = true,
+    ) = SetupChecklist.evaluate(running, onlySelected, apps, priorityOn, down, up, ownApp)
 
     private fun state(list: List<SetupStep>, id: SetupStepId) = list.first { it.id == id }.state
 
@@ -63,6 +64,20 @@ class SetupChecklistTest {
         assertEquals(StepState.WARN, state(steps(down = 1_000_000L, up = 0L), SetupStepId.SPEEDS))
         assertEquals(StepState.WARN, state(steps(down = 0L, up = 1_000_000L), SetupStepId.SPEEDS))
         assertEquals(StepState.TODO, state(steps(down = 0L, up = 0L), SetupStepId.SPEEDS))
+    }
+
+    @Test
+    fun ownAppNotTickedIsAWarningInOnlySelectedMode() {
+        val s = steps(apps = 1, ownApp = false)
+        assertEquals(StepState.WARN, state(s, SetupStepId.APPS))
+        assertFalse(SetupChecklist.allDone(s))
+        assertTrue(s.first { it.id == SetupStepId.APPS }.title.contains("NetValve"))
+    }
+
+    @Test
+    fun ownAppTickIsIgnoredInAllAppsModeAndWhenNothingIsTicked() {
+        assertEquals(StepState.DONE, state(steps(onlySelected = false, ownApp = false), SetupStepId.APPS))
+        assertEquals(StepState.TODO, state(steps(apps = 0, ownApp = false), SetupStepId.APPS))
     }
 
     @Test

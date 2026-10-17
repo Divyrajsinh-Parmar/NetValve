@@ -27,6 +27,7 @@ object SetupChecklist {
         priorityOn: Boolean,
         sharedDownBytesPerSec: Long,
         sharedUpBytesPerSec: Long,
+        ownAppTicked: Boolean = true,
     ): List<SetupStep> {
         val tunnel = if (tunnelRunning) {
             SetupStep(SetupStepId.TUNNEL, "Protection is running", "Traffic of the chosen apps goes through NetValve.", StepState.DONE)
@@ -42,10 +43,13 @@ object SetupChecklist {
 
         // In "all except" mode every app is controlled unless ticked, so there is always something to control.
         val appsReady = !onlySelectedMode || selectedAppCount > 0
-        val apps = if (appsReady) {
-            SetupStep(SetupStepId.APPS, "Apps are chosen", appsDetail(onlySelectedMode, selectedAppCount), StepState.DONE)
-        } else {
+        val apps = if (!appsReady) {
             SetupStep(SetupStepId.APPS, "Choose the apps to control", "Open the Apps tab and tick PayProbe (and NetValve itself for the Load test).", StepState.TODO)
+        } else if (onlySelectedMode && !ownAppTicked) {
+            // The Load tab sends its traffic as NetValve itself, so without this tick the Load test bypasses the tunnel.
+            SetupStep(SetupStepId.APPS, "Also tick NetValve (for the Load test)", "$selectedAppCount app(s) ticked, but NetValve itself is not. The Load tab sends its traffic as NetValve, so tick it in the Apps tab.", StepState.WARN)
+        } else {
+            SetupStep(SetupStepId.APPS, "Apps are chosen", appsDetail(onlySelectedMode, selectedAppCount), StepState.DONE)
         }
 
         val speeds = when {

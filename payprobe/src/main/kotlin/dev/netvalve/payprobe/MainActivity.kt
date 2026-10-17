@@ -189,9 +189,13 @@ class MainActivity : Activity() {
             setSingleLine()
             textSize = 13f
         }
+        val labelColor = Color.rgb(100, 116, 139)
+        settings.addView(body("Run name", 12f, labelColor))
         settings.addView(labelInput)
         settings.addView(savedAs)
+        settings.addView(body("Run length in seconds (0 = until I press Stop)", 12f, labelColor))
         settings.addView(durationInput)
+        settings.addView(body("Address to time", 12f, labelColor))
         settings.addView(urlInput)
         content.addView(settings)
 
@@ -336,10 +340,14 @@ class MainActivity : Activity() {
         }
         tileFails.setTextColor(if (s.failures > 0) Color.rgb(220, 38, 38) else Color.rgb(15, 23, 42))
 
-        details.text = String.format(
-            "last %s ms · p99 %d ms · max %d ms · mean %.0f ms",
-            last?.latencyMs?.toString() ?: "-", s.p99, s.max, s.mean,
-        )
+        details.text = if (s.count > 0) {
+            String.format(
+                "last %s ms · p99 %d ms · max %d ms · mean %.0f ms",
+                last?.latencyMs?.toString() ?: "-", s.p99, s.max, s.mean,
+            )
+        } else {
+            "last - ms · p99 - ms · max - ms · mean - ms"
+        }
         csvInfo.text = if (ProbeState.csvPath.isNotEmpty()) "File: ${ProbeState.csvPath}" else "No file yet. It is created when you press Start."
         chart.setData(ProbeState.last(CHART_POINTS))
     }
