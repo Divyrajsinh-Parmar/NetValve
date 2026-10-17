@@ -318,3 +318,9 @@ One entry per working session, oldest first. This file answers three questions: 
 - Screenshots on the phone (clock 1:51 and 1:52, 3 photos): Home, Controlled apps: "Only the 2 ticked app(s)", High 1 / Medium 0 / Low 1, chips "NetValve - Low" and "PayProbe - High"; Load tab: simulator text, download URL `speed.cloudflare.com/__do...`, upload URL `speed.cloudflare.com/__up`, auto-stop 60, buttons Download, Upload, Both, "Last run" at 0 B/s and 0 errors; PayProbe: the three labels are visible, READY, status line with dashes.
 - Found: problem 20, the "Both" button label wrapped onto two lines. Code fix written (narrower padding, `maxLines = 1`); not built in the AI sandbox.
 - Not seen yet: the top of Home (checklist after NetValve is ticked), the Apps tab, the Mbps lines of the Load tab (below the fold), any run. Upload URL still not verified.
+
+**Update, 18 Oct 2026 (third part of Session 12): usage-access card**
+- Student report: Home shows "Optional: usage access" although usage access was already granted. From the code (read, not run): the card used `state.device.usageAccessGranted`; `DeviceState` defaults it to false and `DeviceStateMonitorImpl` only fills it while the tunnel engine runs, so with protection OFF the card always showed. Hypothesis (not checked on the phone): some phones return MODE_DEFAULT for the app-op even when granted.
+- Code written: new `service/UsageAccess.kt` (app-op, and the permission check on MODE_DEFAULT); `DeviceStateMonitorImpl.isUsageAccessGranted` uses it; `DashboardViewModel` re-reads it every 2 s while Home is subscribed (`DashboardUiState.usageAccessGranted`); `DashboardScreen` uses the new field.
+- Not verified: it compiles (not built in the AI sandbox), the card disappears on the phone, and a phone that returns MODE_DEFAULT. No unit test (needs the Android framework).
+- Open: build, install, check Home; the Load tab network checks from the 17 Oct night remain open.

@@ -1,6 +1,5 @@
 package dev.netvalve.service
 
-import android.app.AppOpsManager
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.BroadcastReceiver
@@ -12,7 +11,6 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.BatteryManager
 import android.os.PowerManager
-import android.os.Process
 import dev.netvalve.data.model.NetworkType
 import dev.netvalve.rules.DeviceState
 import dev.netvalve.rules.DeviceStateMonitor
@@ -149,15 +147,7 @@ class DeviceStateMonitorImpl(
         return last
     }
 
-    fun isUsageAccessGranted(): Boolean {
-        val appOps = context.getSystemService(AppOpsManager::class.java) ?: return false
-        val mode = appOps.unsafeCheckOpNoThrow(
-            AppOpsManager.OPSTR_GET_USAGE_STATS,
-            Process.myUid(),
-            context.packageName,
-        )
-        return mode == AppOpsManager.MODE_ALLOWED
-    }
+    fun isUsageAccessGranted(): Boolean = UsageAccess.isGranted(context)
 
     companion object {
         private const val FOREGROUND_POLL_MILLIS = 2_000L

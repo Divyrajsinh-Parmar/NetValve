@@ -18,6 +18,7 @@ import dev.netvalve.rules.DeviceState
 import dev.netvalve.rules.DeviceStateMonitor
 import dev.netvalve.service.BatteryOptimizations
 import dev.netvalve.service.TunnelState
+import dev.netvalve.service.UsageAccess
 import dev.netvalve.service.VpnController
 import dev.netvalve.service.VpnStatus
 import dev.netvalve.stats.StatsCollector
@@ -25,8 +26,10 @@ import dev.netvalve.stats.StatsSnapshot
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -50,6 +53,8 @@ data class DashboardUiState(
     val ignoringBatteryOptimizations: Boolean = true,
     /** True when NetValve itself is in the ticked list (needed for the Load tab test). */
     val ownAppTicked: Boolean = true,
+    /** Real state of the usage-access permission, read on the Home screen itself (the device monitor only runs while the tunnel is on). */
+    val usageAccessGranted: Boolean = true,
 ) {
     val running: Boolean get() = status.isActive
 }
@@ -76,8 +81,16 @@ class DashboardViewModel @Inject constructor(
         Partial(status, stats, selected, settings, device)
     }
 
+    /** Ticks every 2 s while the Home screen is shown, so permission changes made in Android settings show up soon after returning. */
+    private val permissionTick = flow {
+        while (true) {
+            emit(Unit)
+            delay(2_000)
+        }
+    }
+
     val uiState: StateFlow<DashboardUiState> =
-        combine(partial, settingsRepository.rules) { p, rules ->
+        combine(partial, settingsRepository.rules, permissionTick) { p, rules, _ ->
             val controlled = p.selected.sorted().map { pkg ->
                 ControlledAppRow(pkg, appInfo.labelForPackage(pkg), rules[pkg])
             }
@@ -91,6 +104,7 @@ class DashboardViewModel @Inject constructor(
                 device = p.device,
                 ignoringBatteryOptimizations = BatteryOptimizations.isIgnoringBatteryOptimizations(context),
                 ownAppTicked = p.selected.contains(context.packageName),
+                usageAccessGranted = UsageAccess.isGranted(context),
             )
         }.combine(tierStore.tiers) { state, _ ->
             // Re-read the tiers whenever an assignment changes (or the saved ones finish loading).

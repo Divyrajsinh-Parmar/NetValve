@@ -114,7 +114,7 @@ fun DashboardScreen(
             item { PriorityControlCard(state, viewModel) }
             item { ControlledAppsCard(state, onOpenApps, onOpenApp) }
 
-            if (!state.device.usageAccessGranted) {
+            if (!state.usageAccessGranted) {
                 item {
                     SetupCard(
                         icon = { Icon(Icons.Filled.Visibility, null) },
