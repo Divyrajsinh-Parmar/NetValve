@@ -296,7 +296,7 @@ One entry per working session, oldest first. This file answers three questions: 
 - Found: problem 19 (handoff Section 8): checklist green with NetValve unticked, PayProbe fields without labels once filled, status line with zeros and no samples. The OFF switch of Priority Control looks very dim in the screenshots (not changed).
 - Code written (read against the real files; checklist rule has a default parameter so the old tests still compile): `SetupChecklist.evaluate(..., ownAppTicked = true)` gives a WARN "Also tick NetValve (for the Load test)" in only-selected mode; `DashboardUiState.ownAppTicked` filled from the ticked list and the app's own package name; PayProbe label above each of the three fields; PayProbe status line shows "-" with no samples; 2 new tests in `SetupChecklistTest`.
 **Claimed, not verified:**
-- That the Session 12 code compiles and its tests pass: not built (no Gradle or Kotlin compiler in the AI sandbox). Run the Gradle build and test commands of Session 11 first.
+- That the first-part Session 12 code (checklist warning, PayProbe labels, status line) passes its tests: the Mac output of 17 Oct 2026 shows BUILD SUCCESSFUL for both Gradle commands (see Update below), but the test counts were not shown and most tasks were up-to-date.
 - What the changed screens look like; the Load tab, the Apps tab (tier chips, NetValve "Low (fixed)"), the PayProbe stop after 90 s, "Saved as" after a real run, and all of the experiment.
 - The Mac build result of Session 11 (see above) was not seen as terminal output by the AI.
 **Decisions:** small fixes now (student's choice); the dim OFF switch is left as it is.
@@ -312,3 +312,9 @@ One entry per working session, oldest first. This file answers three questions: 
 **Next session, first steps:**
 1. Run `./tools/session_start_check.sh --full` and write the Entry check.
 2. Fix any build error, then the Apps and Load tabs on the phone, then the speed measurement.
+
+**Update, later on 17 Oct 2026 (second part of Session 12):**
+- Mac output (student): `./gradlew :app:assembleDebug -Pnetvalve.netstack=true :payprobe:assembleDebug` BUILD SUCCESSFUL in 1 s (74 actionable tasks: 1 executed, 8 from cache, 65 up-to-date) and `./gradlew test --continue` BUILD SUCCESSFUL in 1 s (116 tasks: 1 executed, 8 from cache, 107 up-to-date). Because the tasks were mostly up-to-date, the same inputs had been built before; the test counts were not shown. Commit `4996ceb` was pushed (`939d4f0..4996ceb`). `adb install -r` of both APKs printed Success (output pasted).
+- Screenshots on the phone (clock 1:51 and 1:52, 3 photos): Home, Controlled apps: "Only the 2 ticked app(s)", High 1 / Medium 0 / Low 1, chips "NetValve - Low" and "PayProbe - High"; Load tab: simulator text, download URL `speed.cloudflare.com/__do...`, upload URL `speed.cloudflare.com/__up`, auto-stop 60, buttons Download, Upload, Both, "Last run" at 0 B/s and 0 errors; PayProbe: the three labels are visible, READY, status line with dashes.
+- Found: problem 20, the "Both" button label wrapped onto two lines. Code fix written (narrower padding, `maxLines = 1`); not built in the AI sandbox.
+- Not seen yet: the top of Home (checklist after NetValve is ticked), the Apps tab, the Mbps lines of the Load tab (below the fold), any run. Upload URL still not verified.

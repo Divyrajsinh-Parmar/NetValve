@@ -1,6 +1,7 @@
 package dev.netvalve.ui.sim
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -101,10 +102,21 @@ fun SimulatorScreen(viewModel: SimulatorViewModel = hiltViewModel()) {
                     if (stats.running) {
                         Button(onClick = viewModel::stop) { Text("Stop") }
                     } else {
+                        // Narrow padding and one-line labels: with the default padding "Both" wrapped onto two lines on the phone.
+                        val buttonPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { viewModel.start(SimMode.DOWN, downloadUrl, uploadUrl, autoStop) }) { Text("Download") }
-                            FilledTonalButton(onClick = { viewModel.start(SimMode.UP, downloadUrl, uploadUrl, autoStop) }) { Text("Upload") }
-                            FilledTonalButton(onClick = { viewModel.start(SimMode.BOTH, downloadUrl, uploadUrl, autoStop) }) { Text("Both") }
+                            Button(
+                                onClick = { viewModel.start(SimMode.DOWN, downloadUrl, uploadUrl, autoStop) },
+                                contentPadding = buttonPadding,
+                            ) { Text("Download", maxLines = 1) }
+                            FilledTonalButton(
+                                onClick = { viewModel.start(SimMode.UP, downloadUrl, uploadUrl, autoStop) },
+                                contentPadding = buttonPadding,
+                            ) { Text("Upload", maxLines = 1) }
+                            FilledTonalButton(
+                                onClick = { viewModel.start(SimMode.BOTH, downloadUrl, uploadUrl, autoStop) },
+                                contentPadding = buttonPadding,
+                            ) { Text("Both", maxLines = 1) }
                         }
                     }
                 }
