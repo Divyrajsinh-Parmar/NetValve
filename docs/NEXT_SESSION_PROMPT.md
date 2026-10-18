@@ -1,0 +1,45 @@
+# Prompt for the next Claude account (written 18 Oct 2026, Session 12, Update 15)
+
+Paste everything below the line into a new chat, attach the project zip (with .git), and send.
+
+----------------------------------------------------------------------
+
+Project: priority scheduler on NetValve (repo ~/Downloads/qos-priority-scheduler, branch qos-scheduler, remote Divyrajsinh-Parmar/NetValve; never delete anything and never overwrite main). I attached the latest project zip (it includes .git). My machine: MacBook Air M1 with adb and Gradle. Test phone: OnePlus Nord CE5 (OxygenOS 16). I am a beginner student (IITRAM, Computer Networks project). I write Hinglish and sometimes dictate, so a word can be wrong; if something is unclear, ask.
+
+BEFORE CHANGING ANYTHING:
+1. Read fully: docs/PROJECT_HANDOFF.md (Section 13 says how to talk to me), docs/IMPLEMENTATION_ROADMAP.md, docs/SESSION_LOG.md (especially Session 12 and ALL its Updates 1 to 15), docs/NEXT_SESSION_PROMPT.md, docs/HOW_TO_RUN_EXPERIMENT.md. docs/REMAINING_WORK.md is stale (state of Session 8). The run protocol in HOW_TO_RUN_EXPERIMENT.md (90 s, Download at 10 s, window 15 to 65 s) is OLDER than the one used since Update 10 (see PROTOCOL below).
+2. Check git log against SESSION_LOG. Expected HEAD: "Session 12: R 26.0 plan for C4 block, handoff prompt for next account". The commits before it, newest first: "Session 12: hotspot C1 r2-r5, queue and timeouts, link speed drifted", "Session 12: mobile data C1 runs, queue in 1 of 3", "Session 12: college Wi-Fi C1 runs show no queue, plan across networks", "Session 12: C4_S1_r1 first Priority Control run, loaded p95 268 vs 2154", "Session 12: pilot C1_S1_r1 on hotspot, link speed 47 Mbps, R 42.3", then 20ce3b5 "Session 12: Tele2 slow without relay, Linode Mumbai 22.1 Mbps load source". Mark anything written as done without a commit, file or output as "unverified".
+3. Do not assume anything. If a fact is missing or two documents disagree, ask me ONE question (use the tap-options tool).
+4. First reply: project stage in at most 10 lines, what is verified, what is unverified, and the ONE pending test below. Wait for my result before anything else.
+
+STAGE (18 Oct 2026): M0, M1 done. M2: idle baselines, load source, link speeds and C1 runs on three networks are done; the scheduler (M3 to M5 code, built on the Mac) has been run on the phone as a scheduler only once (C4_S1_r1). M6 to M8 not started.
+
+WHAT THE DATA SAYS SO FAR (details and file names in SESSION_LOG Updates 10 to 14; CSVs in docs/data/):
+- Friend's hotspot (the only network with a clear queue). Morning: C1_S1_r1 (Priority OFF) loaded p95 2154 ms; C4_S1_r1 (Priority ON, R 42.3) loaded p95 268 ms, Low (Load) speed 8.9 Mbps against 45.1 Mbps in C1 (about the 20 percent cap while High is active; hypothesis). Afternoon, link slower: C1_S1_r2 to r5 Load 25.2, 26.5, 31.3, 38.3 Mbps, loaded p95 5000 (timeout), 4754, 4271, 908 ms, PayProbe failures (5000 ms timeouts) 2, 1, 0, 0.
+- College Wi-Fi: three C1 runs, Load 153 to 162 Mbps, loaded/idle p95 ratio 0.6, 0.7, 1.3: no queue, so no C4 runs there.
+- Mobile data (5G): three C1 runs, Load 92.4, 87.7, 76.2 Mbps, ratio 3.1, 1.2, 0.9: queue in 1 of 3, so no C4 runs there.
+- Hypothesis (not proven): the queue appears when the link is the bottleneck for the load; the cause of the hotspot speed change from 45-56 Mbps (morning) to 25-38 Mbps (afternoon) is not known.
+
+PROTOCOL (every run since Update 10): friend's hotspot, mobile data OFF, Protection ON, only NetValve and PayProbe ticked, phone on a charger. PayProbe: run name, length 100 s, Start; count to 20, then in NetValve Load tab press Download (URL http://speedtest.mumbai1.linode.com/100MB-mumbai.bin, auto-stop 60). Windows in analysis/summarize.py: idle --from-sec 5 --to-sec 15, loaded --from-sec 25 --to-sec 75. Validity of a network: loaded p95 about 2x idle p95 or more. Run order and names: C1_S1_rN (Priority Control OFF), C4_S1_rN (Priority Control ON). Shared speed is typed with "Type exact values instead" (Shared download = R, Shared upload = 0; the button "Use 90%" needs both numbers above 0 and no upload speed is measured).
+
+DECISIONS TAKEN (details in Update 15):
+- R for the next block by formula, no new link check: median of the four afternoon C1 Load averages (25.2, 26.5, 31.3, 38.3) = 28.9 Mbps; R = 0.9 x 28.9 = 26.0 Mbps; Shared upload 0. R 42.3 (morning) is too high for the afternoon link.
+- The controlled C1/C4 series stays on the hotspot. College Wi-Fi and mobile data stay in the report as C1-only results. Report scope: one phone, one hotspot, R fixed (it must be set again when the link changes: limitation and future work), other networks only as observations.
+- I prefer few tests and formulas over repeated measurements; do not ask me for new link checks or new networks unless it is essential.
+
+THE ONE PENDING TEST (ask me for the result first): with Priority Control ON and Shared speed 26.0 / 0, run C4_S1_r2, C4_S1_r3, C4_S1_r4, C4_S1_r5 on the friend's hotspot (protocol above, 30 s pause between runs; note per run the Load tab Average, Errors, Total down and the PayProbe Failures). Then on the Mac pull the PayProbe files into a NEW folder and run the standard command (tested on synthetic CSVs only; the adb part and macOS awk are untested here):
+D=~/Desktop/payprobe_hot_$(date +%H%M) && mkdir -p "$D" && adb pull /sdcard/Android/data/dev.netvalve.payprobe/files/ "$D" && cd ~/Downloads/qos-priority-scheduler && for F in $(ls "$D"/files/payprobe_C[0-9]_S1_r[0-9]_*.csv | sort); do echo "== $(basename $F)"; A=$(python3 analysis/summarize.py $F --from-sec 5 --to-sec 15 2>/dev/null | sed -n 2p); B=$(python3 analysis/summarize.py $F --from-sec 25 --to-sec 75 2>/dev/null | sed -n 2p); echo "idle   n=$(echo $A | awk '{print $2}') fails=$(echo $A | awk '{print $3}') p50=$(echo $A | awk '{print $4}') p95=$(echo $A | awk '{print $5}')"; echo "loaded n=$(echo $B | awk '{print $2}') fails=$(echo $B | awk '{print $3}') p50=$(echo $B | awk '{print $4}') p95=$(echo $B | awk '{print $5}')"; echo "ratio p95 = $(python3 -c "print(round($(echo $B | awk '{print $5}')/$(echo $A | awk '{print $5}'),1))")"; awk -F, 'NR>1 && $3>1000 {printf "  spike %d s: %d ms\n", $2/1000, $3}' $F | head -4; done
+Reading rule (roadmap M6 criterion 1): C4 loaded p95 at most 50 percent of the C1 loaded p95 of the same run number (r2 2500, r3 2377, r4 2135.5, r5 454, r1 1077 ms), and also a stricter check against the weakest C1 (r5, 908 ms, limit 454 ms). The report must say that C1 and C4 were not alternated and that the link drifted. The loaded windows have fewer samples when probes are slow (hypothesis: probes are sent one after the other).
+
+AFTER THAT (in order, one test at a time; I decide which): the C1 versus C4 table (no phone needed); optional C2 (static cap, Priority OFF, per-app cap on NetValve in Apps tab, sliders icon, Download cap in kbps = R/5 x 1000 = 5200 kbps for R 26.0; clear the rule afterwards) and S4 (High idle, only Low) to answer "static cap versus priority"; S2/S3 need an upload speed and Cloudflare __up verified first; then M8 report and viva. Fixed success criteria are in the roadmap (M6). If the phone effect is small, the fallback in roadmap Section 8 (simulation + tests + honest analysis) is still submittable.
+
+OPEN ISSUES: the Gradle output of the 9 Nat64Test tests and the in-app Logs line "IPv4 unreachable, using NAT64" were never seen (unverified); TrafficSimulator.uploadLoop never reads the server answer (Cloudflare __up unverified); the app never uses android.util.Log (relay logs only in the in-app Logs tab, not logcat); HOW_TO_RUN_EXPERIMENT.md protocol is outdated; docs/REMAINING_WORK.md is stale; Session 11 and 12 patches are not archived in tools/patches; "old project removal" on GitHub is undecided (never touch main).
+
+RULES FOR YOU:
+- Hinglish, beginner-friendly, short numbered steps. When I ask for a batch of runs, give the whole runbook with settings, order, timings and a copy-paste report format; otherwise ONE test at a time. I answer in TEXT numbers; ask for a screenshot only when text cannot carry it.
+- Claim only what a file, code or output verifies; otherwise write "hypothesis". Do not give a number from memory as a fact.
+- Test commands before giving them (or say untested), and check where something is logged before telling me where to look.
+- Each code or docs change as ONE self-contained .patch file attached with the file tool, tested with git apply --check on a clean copy against my HEAD (ask my HEAD with git log --oneline -1 if unsure). Never use rm on my project; use new dated folders.
+- After each step give a SESSION_LOG entry (in the patch) and ONE ./tools/finish_session.sh command (docs-only changes need SESSION_LOG.md in the change; code changes also need PROJECT_HANDOFF.md and NOTICE.md if an upstream file changes).
+- You may have no Gradle or Kotlin compiler: say clearly what you could not build or run. Never say "fixed" before my phone result.
+- Do not write code before I report the pending test. Double-check before you reply.
