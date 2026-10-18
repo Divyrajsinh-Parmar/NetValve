@@ -28,7 +28,8 @@ The original README and developer handoff are kept for reference in `docs/upstre
 
 ### New code (our contribution, all under `app/src/main/kotlin/dev/netvalve/scheduler/`)
 `SchedulerModel.kt`, `PriorityPacerCore.kt`, `AdaptiveThrottle.kt`, `CalibratorMath.kt`,
-`SchedulerPacer.kt`, `TierAssignments.kt` (pure Kotlin, no Android imports), with unit tests and a
+`SchedulerPacer.kt`, `TierAssignments.kt` (pure Kotlin, no Android imports),
+and (18 Oct 2026) `PriorityLevels.kt`, `RankedPacerCore.kt`, `RankedPacer.kt`, `PriorityOrder.kt`, `LevelResolver.kt` (ranked priority list; pure Kotlin), with unit tests and a
 bottleneck simulator in `app/src/test/kotlin/dev/netvalve/scheduler/`.
 Simulation output: `docs/data/`.
 
