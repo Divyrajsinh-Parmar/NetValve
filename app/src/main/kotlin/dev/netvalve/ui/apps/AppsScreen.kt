@@ -44,7 +44,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.graphics.drawable.toBitmap
 import dev.netvalve.data.model.SelectionMode
-import dev.netvalve.scheduler.Tier
+import dev.netvalve.scheduler.PriorityLevels
 import dev.netvalve.ui.components.EmptyState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -83,8 +83,9 @@ fun AppsScreen(
         )
 
         Text(
-            "Priority tier of a controlled app (tap the chip): High is served first (at most ${Tier.MAX_HIGH_APPS} apps), " +
-                "Medium is the default, Low gets what is left. NetValve itself is always Low and PayProbe always High.",
+            "Priority chip of a controlled app (tap it): adds the app at the end of the priority list " +
+                "(at most ${PriorityLevels.MAX_RANKS} apps) or takes it out. The order is set on the Apps tab. " +
+                "NetValve itself is always normal and PayProbe always the most important.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
@@ -140,9 +141,9 @@ fun AppsScreen(
                         selected = row.selected,
                         // ONLY_SELECTED: ticked = controlled. ALL_EXCEPT: ticked = excluded.
                         controlled = if (mode == SelectionMode.ONLY_SELECTED) row.selected else !row.selected,
-                        tier = row.tier,
+                        rank = row.rank,
                         tierLocked = row.locked,
-                        onTierClick = { viewModel.cycleTier(row.app.packageName) },
+                        onTierClick = { viewModel.togglePriority(row.app.packageName) },
                         onToggle = { viewModel.toggle(row.app.packageName, it) },
                         onOpen = { onOpenApp(row.app.packageName) },
                     )
@@ -159,7 +160,7 @@ private fun AppRow(
     isSystem: Boolean,
     selected: Boolean,
     controlled: Boolean,
-    tier: Tier,
+    rank: Int,
     tierLocked: Boolean,
     onTierClick: () -> Unit,
     onToggle: (Boolean) -> Unit,
@@ -184,7 +185,7 @@ private fun AppRow(
                 AssistChip(
                     onClick = onTierClick,
                     enabled = !tierLocked,
-                    label = { Text(tierLabel(tier, tierLocked)) },
+                    label = { Text(rankLabel(rank, tierLocked)) },
                 )
             } else {
                 Text(
@@ -199,17 +200,13 @@ private fun AppRow(
     }
 }
 
-private fun tierLabel(tier: Tier, locked: Boolean): String {
-    val name = when (tier) {
-        Tier.HIGH -> "High"
-        Tier.MEDIUM -> "Medium"
-        Tier.LOW -> "Low"
-    }
+private fun rankLabel(rank: Int, locked: Boolean): String {
+    val name = if (rank > 0) "Priority #$rank" else "Normal"
     return if (locked) "$name (fixed)" else name
 }
 
 @Composable
-private fun AppIcon(packageName: String, label: String) {
+internal fun AppIcon(packageName: String, label: String) {
     val context = LocalContext.current
     val icon by produceState<ImageBitmap?>(initialValue = null, packageName) {
         value = withContext(Dispatchers.IO) {

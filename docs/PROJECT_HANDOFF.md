@@ -248,6 +248,16 @@ Pure Kotlin, no Android imports, deterministic (injected clock), so it is testab
 
 **Evidence level:** 30 new JVM tests; in an AI sandbox (Kotlin 2.0.21, JDK 21, stand-in JUnit runner, not Gradle) 86 of 86 scheduler tests passed in 3 runs. Not verified: Gradle, the phone, the cap shares for the middle ranks (the 20 percent cap of the lowest level is the one measured in S1 on the hotspot, as Low).
 
+### 9.4 Production-stage UI and wiring (Session 13, patch A2, 18 Oct 2026; compiled only partly, not seen on a phone)
+
+**Screens.** Tabs: Home (`ui/home/HomeScreen.kt`), Apps (`ui/priority/PriorityScreen.kt`), Stats (unchanged). Hidden Test tools (`ui/tools/ToolsScreen.kt`, seven taps on the small "NetValve" text on Home): Advanced home (`DashboardScreen`), Technical apps (`AppsScreen`, tick list and per-app rules), Load (`SimulatorScreen`), Logs (`LogsScreen`). The app is always light (`Theme.kt`, manifest base theme).
+
+**Priority list.** `PriorityStore` (singleton) owns the ordered list (`PriorityOrder`), exposes `list` (StateFlow) and `resolver` (`LevelResolver`, read by the relay per chunk through `SchedulerController.acquire`). Saved in DataStore key `priority_order_json`. Locked: NetValve itself = normal, PayProbe = level 0 (most important). Old `TierStore` and tier classes stay unused.
+
+**Production settings.** `DashboardViewModel.applyProductionDefaults()` (called once per app start by `HomeScreen`) sets selection mode `ALL_EXCEPT` and Priority Control on. It does not touch the shared speed R (0 = not scheduled).
+
+**Known gaps:** no automatic R yet (patch B); no simple way to exclude a banking app (old tick list in Test tools); the Stats tab is still technical; the first-run guide does not exist yet.
+
 ## 10. Results so far (simulation, plus first phone baselines)
 
 **Model.** One 5 Mbps bottleneck with a 256 KB FIFO (about 410 ms of queue), base RTT 20 ms. A High app sends a 1.4 KB request every 200 ms in 10 s bursts separated by 10 s of silence; Low is three greedy downloads. R = 0.9 x link. Simplifications: no TCP back-off (the standing queue is what matters), measured High requests are never dropped (this *understates* unscheduled latency). Reproduce: `./gradlew test` prints the tables; CSV in `docs/data/sim_results.csv`.
@@ -403,3 +413,4 @@ M0 adopt and verify (done) · M1 PayProbe (done) · M2 Go/No-Go experiment (in p
 | 18 Oct 2026 | Session 12 (tenth part): NAT64 fallback tested on the phone by the student: Load Download on the hotspot with the plain Tele2 URL gives Errors 0, 17.1 MB, 7.2 Mbps (problem 26) | 8 |
 | 18 Oct 2026 | Session 12 (eleventh part): Tele2 is the slow part (4.9 Mbps without the relay); Linode Mumbai 22.1 Mbps chosen as pilot load source; CacheFly dropped | 10 |
 | 18 Oct 2026 | Session 13 (patch A1): production-stage decision (2 to 3 days of real use instead of more controlled tests); ranked priority engine (ordered priority list, strict level per rank) written and tested in an AI sandbox, not wired in, not built with Gradle (Section 9.3) | 9.3 |
+| 18 Oct 2026 | Session 13 (patch A2): ranked engine wired into the relay (`SchedulerController`, `PriorityStore`), Apps tab = ordered priority list, simple Home with Pause, hidden Test tools, always-light theme (Section 9.4) | 9.4 |

@@ -522,3 +522,21 @@ One entry per working session, oldest first. This file answers three questions: 
 **Next session, first steps:**
 1. Run `./gradlew test --continue` on the Mac and send the end of the output (the number of tests and BUILD result).
 2. Then patch A2.
+
+**Update 1, 18 Oct 2026 (patch A2): ranked engine wired in, priority list screen, simple Home, Test tools, white theme**
+- Entry check: student ran `./gradlew test --continue` on the Mac for patch A1: BUILD SUCCESSFUL in 1m 23s (116 tasks); the output did not print the number of tests, so "86 of 86" stays a sandbox result. Commit `cfde55c` "Session 13: ranked priority engine (patch A1)" pushed to `origin/qos-scheduler`. `finish_session.sh` printed the two known WARN lines (tiny CSVs `payprobe_C1_idle_mobile_r0_20261014_122143.csv` and `payprobe_C1_idle_mobile_r1_20261014_122201.csv`, 3 rows each); they stay open.
+- What this patch changes (staging A, enlarged because the student chose the ranked engine):
+  1. `SchedulerController` now uses `RankedPacer` and `LevelResolver` (level of a UID = place in the priority list, every other app = normal); the flow log line says `level=N` instead of `tier=X`.
+  2. New `PriorityStore` (the owner of the list, saved as JSON under the new DataStore key `priority_order_json`) replaces `TierStore` in the code that runs; `TierStore`, `TierRepository` and the old tier classes stay in the project unused.
+  3. New Apps tab (`PriorityScreen`): the ordered priority list with move up, move down and remove, and all other apps with an add button; at most 5 apps.
+  4. New Home (`HomeScreen`): protection on/off switch and one big Pause/Resume button. It applies the production settings once per app start (all apps through the tunnel except the ticked ones, Priority Control on); a running tunnel is rebuilt if a setting changed. The shared speed R is NOT changed.
+  5. Tabs are now Home, Apps, Stats. Load, Logs, the old Home ("Advanced home") and the old app list with per-app rules ("Technical apps") are reachable only from Test tools, opened by tapping the small "NetValve" text at the bottom of Home seven times.
+  6. The app is always light: `darkTheme` defaults to false and the manifest base theme is `Theme.Material.Light.NoActionBar`.
+- Evidence level: the scheduler package (with `SchedulerControllerTest` updated to the level resolver) compiles with warnings as errors and 86 of 86 scheduler tests pass in the AI sandbox (not Gradle). `PriorityStore` and `PriorityViewModel` were type-checked in the sandbox with small stand-in stubs for Android and Hilt. The Compose screens, `Navigation.kt`, the changed view models and the manifest were NOT compiled by anyone yet; the student's `./gradlew assembleDebug` is the first real check. Nothing was seen on the phone.
+- Hypotheses and risks (not verified):
+  - Hypothesis: with `ALL_EXCEPT` all apps except the ticked ones go through the tunnel. The currently ticked apps (NetValve and, from the earlier test setup, PayProbe) stay outside. Banking or UPI apps may refuse to work through a tunnel; there is no simple screen for excluding an app yet (the old tick list is in Test tools, "Technical apps"). To be decided with the student in patch B.
+  - Risk: the shared speed R saved earlier (about 26 Mbps down, set by hand) is still active and caps ALL tunnelled apps to that speed on every network. R auto-measuring is patch B. Until then R can be set to 0 in Test tools, Advanced home, which means "no shaping".
+  - Hypothesis: a seven-tap gesture is hidden enough; no password.
+  - The Stats tab is unchanged (still the technical statistics screen); its simple version comes with patch B.
+- Open items for patch D: `git diff --name-status pinned-base HEAD` lists more modified upstream files than NOTICE.md names (`GlobalSettings.kt`, `RuleEngine.kt`, `DeviceStateMonitorImpl.kt`, `TrafficEngine.kt`, `FlowSupervisor.kt`, `Components.kt`, `ConnectionManager.kt` is named, `settings.gradle.kts` is named); NOTICE.md must name them all.
+- Next: student builds (`./gradlew assembleDebug`), sends compile errors if any, installs, and checks the list below. Then patch B (auto setup, auto speed measuring, boot start, health summary, simple Stats).

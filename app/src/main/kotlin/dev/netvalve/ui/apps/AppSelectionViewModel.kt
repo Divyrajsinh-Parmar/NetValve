@@ -7,9 +7,9 @@ import dev.netvalve.data.model.SelectionMode
 import dev.netvalve.repository.SettingsRepository
 import dev.netvalve.repository.AppSelectionRepository
 import dev.netvalve.repository.InstalledAppsRepository
-import dev.netvalve.scheduler.Tier
-import dev.netvalve.scheduler.TierAssignments
-import dev.netvalve.service.TierStore
+import dev.netvalve.scheduler.PriorityLevels
+import dev.netvalve.scheduler.PriorityOrder
+import dev.netvalve.service.PriorityStore
 import dev.netvalve.service.VpnController
 import dev.netvalve.service.VpnStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -26,9 +26,9 @@ import javax.inject.Inject
 data class AppRowUi(
     val app: InstalledApp,
     val selected: Boolean,
-    /** Priority tier (M4). Only meaningful for apps the tunnel controls. */
-    val tier: Tier = Tier.MEDIUM,
-    /** Fixed tier (NetValve itself = Low, PayProbe = High); cannot be changed. */
+    /** 1-based place in the priority list; 0 = not in the list ("normal"). */
+    val rank: Int = 0,
+    /** Fixed entry (NetValve itself = normal, PayProbe = most important); cannot be changed. */
     val locked: Boolean = false,
 )
 
@@ -46,7 +46,7 @@ class AppSelectionViewModel @Inject constructor(
     private val installedApps: InstalledAppsRepository,
     private val selectionRepository: AppSelectionRepository,
     private val controller: VpnController,
-    private val tierStore: TierStore,
+    private val priorityStore: PriorityStore,
     settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
@@ -74,13 +74,13 @@ class AppSelectionViewModel @Inject constructor(
             pendingRestart = pendingRestart.value && status.isActive,
             tunnelActive = status.isActive,
         )
-    }.combine(tierStore.tiers) { state, _ ->
-        // Re-read the tier of every row whenever an assignment changes (or the saved ones load).
+    }.combine(priorityStore.list) { state, _ ->
+        // Re-read the rank of every row whenever the priority list changes (or the saved list loads).
         state.copy(
             apps = state.apps.map { row ->
                 row.copy(
-                    tier = tierStore.tierOfPackage(row.app.packageName),
-                    locked = tierStore.isLocked(row.app.packageName),
+                    rank = priorityStore.rankOf(row.app.packageName),
+                    locked = priorityStore.isLocked(row.app.packageName),
                 )
             },
         )
@@ -88,7 +88,7 @@ class AppSelectionViewModel @Inject constructor(
 
     private val _tierMessage = MutableStateFlow<String?>(null)
 
-    /** One line of feedback for the tier chips (for example when High is full). */
+    /** One line of feedback for the priority chips (for example when the list is full). */
     val tierMessage: StateFlow<String?> = _tierMessage.asStateFlow()
 
     /** Decides what a ticked checkbox means (controlled vs excluded). */
@@ -98,21 +98,18 @@ class AppSelectionViewModel @Inject constructor(
 
     fun setQuery(q: String) { query.value = q }
 
-    /** Tap on a tier chip: Medium -> High -> Low -> Medium. High holds at most 3 apps. */
-    fun cycleTier(packageName: String) {
-        val next = when (tierStore.tierOfPackage(packageName)) {
-            Tier.MEDIUM -> Tier.HIGH
-            Tier.HIGH -> Tier.LOW
-            Tier.LOW -> Tier.MEDIUM
+    /** Tap on the priority chip: adds the app at the end of the priority list, or takes it out again. */
+    fun togglePriority(packageName: String) {
+        val result = if (priorityStore.rankOf(packageName) > 0) {
+            priorityStore.remove(packageName)
+        } else {
+            priorityStore.add(packageName)
         }
-        when (tierStore.set(packageName, next)) {
-            TierAssignments.SetResult.OK -> _tierMessage.value = null
-            TierAssignments.SetResult.HIGH_FULL -> {
-                tierStore.set(packageName, Tier.LOW)
-                _tierMessage.value = "High holds at most ${Tier.MAX_HIGH_APPS} apps, so this app went to Low. " +
-                    "Move a High app to Low or Medium first to free a place."
-            }
-            TierAssignments.SetResult.LOCKED -> _tierMessage.value = "This app's tier is fixed."
+        _tierMessage.value = when (result) {
+            PriorityOrder.Result.FULL ->
+                "The priority list holds at most ${PriorityLevels.MAX_RANKS} apps. Remove one first."
+            PriorityOrder.Result.LOCKED -> "This app's place is fixed."
+            else -> null
         }
     }
 

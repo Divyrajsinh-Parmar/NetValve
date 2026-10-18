@@ -25,6 +25,11 @@ The original README and developer handoff are kept for reference in `docs/upstre
 | `network/ConnectionManager.kt` | bind the TCP socket before `protect()` (hypothesis: `protect()` failed on a socket without a file descriptor); 18 Oct 2026: NAT64 fallback for IPv4 destinations that are unreachable (dials `64:ff9b::<IPv4>`), failed sockets are closed |
 | `ui/navigation/Navigation.kt` | `switchTab` helper so the Dashboard tab works from every screen |
 | `ui/apps/AppsScreen.kt`, `ui/apps/AppSelectionViewModel.kt` | real app icons, explanation of what a tick means, Tick all / Clear all |
+| `ui/theme/Theme.kt`, `AndroidManifest.xml` | 18 Oct 2026 (patch A2): the app is always light (`darkTheme` defaults to false; the manifest base theme is `Theme.Material.Light.NoActionBar`); dark colours stay in the file |
+| `ui/navigation/Navigation.kt` | 18 Oct 2026 (patch A2): three tabs (Home, Apps, Stats); Test tools, Advanced home and Technical apps routes added; Load and Logs reached from Test tools |
+| `ui/dashboard/DashboardScreen.kt`, `ui/dashboard/DashboardViewModel.kt` | 18 Oct 2026 (patch A2): tier chips replaced by priority-list places; `applyProductionDefaults()` added; the screen now lives in Test tools |
+| `ui/apps/AppsScreen.kt`, `ui/apps/AppSelectionViewModel.kt` | 18 Oct 2026 (patch A2): tier chip replaced by a priority-list chip; `AppIcon` made `internal`; the screen now lives in Test tools |
+| `di/EngineModule.kt`, `di/RepositoryModule.kt` | 18 Oct 2026 (patch A2): the scheduler controller gets the ranked level resolver; `PriorityOrderRepository` provided |
 
 ### New code (our contribution, all under `app/src/main/kotlin/dev/netvalve/scheduler/`)
 `SchedulerModel.kt`, `PriorityPacerCore.kt`, `AdaptiveThrottle.kt`, `CalibratorMath.kt`,
@@ -32,6 +37,13 @@ The original README and developer handoff are kept for reference in `docs/upstre
 and (18 Oct 2026) `PriorityLevels.kt`, `RankedPacerCore.kt`, `RankedPacer.kt`, `PriorityOrder.kt`, `LevelResolver.kt` (ranked priority list; pure Kotlin), with unit tests and a
 bottleneck simulator in `app/src/test/kotlin/dev/netvalve/scheduler/`.
 Simulation output: `docs/data/`.
+
+### New code for the production-stage app (patch A2, 18 Oct 2026; our own code)
+`app/src/main/kotlin/dev/netvalve/service/PriorityStore.kt`, `repository/PriorityOrderRepository.kt`,
+`ui/priority/PriorityScreen.kt`, `ui/priority/PriorityViewModel.kt`, `ui/home/HomeScreen.kt`,
+`ui/tools/ToolsScreen.kt`. `scheduler/SchedulerController.kt` (our file) now uses the ranked pacer.
+Not used any more but kept: `service/TierStore.kt`, `repository/TierRepository.kt`, `scheduler/Tier*.kt`,
+`PriorityPacerCore.kt`, `SchedulerPacer.kt`.
 
 ### New code in the relay package
 `app/src/main/kotlin/dev/netvalve/network/Nat64.kt` (NAT64 address helpers and the IPv4 path memory, our own code) with `app/src/test/kotlin/dev/netvalve/network/Nat64Test.kt`.

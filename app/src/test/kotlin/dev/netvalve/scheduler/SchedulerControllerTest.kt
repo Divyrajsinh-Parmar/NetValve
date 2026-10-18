@@ -18,8 +18,9 @@ import org.junit.Test
 /** Real-time tests with generous tolerances (the pacer ticks every 10 ms). */
 class SchedulerControllerTest {
 
-    private val tiers = TierAssignments(mapOf("low.app" to Tier.LOW, "high.app" to Tier.HIGH))
-    private val resolver = TierResolver(tiers) { uid ->
+    // "high.app" is the first app of the priority list (level 1); "low.app" is not in the list (normal).
+    private val order = PriorityOrder(listOf("high.app"))
+    private val resolver = LevelResolver(order) { uid ->
         when (uid) {
             LOW_UID -> listOf("low.app")
             HIGH_UID -> listOf("high.app")
@@ -115,13 +116,13 @@ class SchedulerControllerTest {
     }
 
     @Test
-    fun describeFlowNamesTierModeAndRates() {
+    fun describeFlowNamesLevelModeAndRates() {
         val scope = scope()
         try {
             val c = controller(scope, MutableStateFlow(SchedulerSettings(SchedMode.PRIORITY_PACER, 500_000L, 1_000_000L)))
             runBlocking { waitUntil { c.isActive(Lane.UPLOAD) } }
             val line = c.describeFlow(HIGH_UID, 7L)
-            assertTrue(line, "flow=7" in line && "tier=HIGH" in line && "mode=PRIORITY_PACER" in line)
+            assertTrue(line, "flow=7" in line && "level=1" in line && "mode=PRIORITY_PACER" in line)
             assertTrue(line, "R_down=8 Mbps" in line && "R_up=4 Mbps" in line)
             assertEquals(1L, c.newFlowId())
         } finally { scope.cancel() }

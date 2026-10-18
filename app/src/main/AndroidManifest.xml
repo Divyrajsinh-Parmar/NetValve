@@ -22,7 +22,7 @@
         android:icon="@android:drawable/sym_def_app_icon"
         android:label="NetValve"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material.NoActionBar">
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
         <activity
             android:name=".MainActivity"

@@ -49,7 +49,6 @@ import dev.netvalve.data.model.Ipv6Mode
 import dev.netvalve.data.model.SelectionMode
 import dev.netvalve.scheduler.RateUnits
 import dev.netvalve.scheduler.SchedMode
-import dev.netvalve.scheduler.Tier
 import dev.netvalve.service.TunnelState
 import dev.netvalve.ui.components.SectionCard
 import dev.netvalve.ui.navigation.AppActions
@@ -428,11 +427,10 @@ private fun ControlledAppsCard(state: DashboardUiState, onOpenApps: () -> Unit, 
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            val high = state.controlledApps.count { it.tier == Tier.HIGH }
-            val medium = state.controlledApps.count { it.tier == Tier.MEDIUM }
-            val low = state.controlledApps.count { it.tier == Tier.LOW }
+            val ranked = state.controlledApps.count { it.rank > 0 }
+            val normal = state.controlledApps.size - ranked
             Text(
-                "High $high · Medium $medium · Low $low",
+                "In the priority list $ranked · normal $normal",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -441,7 +439,7 @@ private fun ControlledAppsCard(state: DashboardUiState, onOpenApps: () -> Unit, 
                 state.controlledApps.take(12).forEach { app ->
                     AssistChip(
                         onClick = { onOpenApp(app.packageName) },
-                        label = { Text("${app.label} · ${tierName(app.tier)}") },
+                        label = { Text("${app.label} · ${rankName(app.rank)}") },
                     )
                 }
             }
@@ -451,11 +449,7 @@ private fun ControlledAppsCard(state: DashboardUiState, onOpenApps: () -> Unit, 
     }
 }
 
-private fun tierName(tier: Tier): String = when (tier) {
-    Tier.HIGH -> "High"
-    Tier.MEDIUM -> "Medium"
-    Tier.LOW -> "Low"
-}
+private fun rankName(rank: Int): String = if (rank > 0) "#$rank" else "Normal"
 
 // ---------------------------------------------------------------------------------------------
 // 5. Phone setup and tunnel settings

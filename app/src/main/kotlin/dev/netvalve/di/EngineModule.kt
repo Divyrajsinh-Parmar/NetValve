@@ -22,7 +22,7 @@ import dev.netvalve.rules.DeviceStateMonitor
 import dev.netvalve.rules.RuleEngine
 import dev.netvalve.scheduler.SchedulerController
 import dev.netvalve.scheduler.SchedulerSettings
-import dev.netvalve.service.TierStore
+import dev.netvalve.service.PriorityStore
 import dev.netvalve.sim.TrafficSimulator
 import dev.netvalve.stats.StatsCollector
 import dev.netvalve.throttle.ThrottleManager
@@ -116,14 +116,14 @@ object EngineModule {
     @Singleton
     fun provideSchedulerController(
         settingsRepository: SettingsRepository,
-        tierStore: TierStore,
+        priorityStore: PriorityStore,
         @AppScope scope: CoroutineScope,
     ): SchedulerController = SchedulerController(
         scope = scope,
         settings = settingsRepository.settings
             .map { SchedulerSettings(it.schedMode, it.schedRateUpBytesPerSec, it.schedRateDownBytesPerSec) }
             .distinctUntilChanged(),
-        tiers = tierStore.resolver,
+        levels = priorityStore.resolver,
         nowMs = SystemClock::elapsedRealtime,
     )
 

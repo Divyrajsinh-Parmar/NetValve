@@ -1,7 +1,6 @@
 package dev.netvalve.ui.theme
 
 import android.app.Activity
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -66,7 +65,9 @@ private val AppTypography = Typography(
 
 @Composable
 fun NetValveTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    // Production stage: the app is always light (white), whatever the phone's night mode says.
+    // DarkColors stay in the file and still work when a caller passes darkTheme = true.
+    darkTheme: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val colors = if (darkTheme) DarkColors else LightColors

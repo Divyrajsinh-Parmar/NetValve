@@ -12,8 +12,7 @@ import dev.netvalve.repository.AppSelectionRepository
 import dev.netvalve.repository.SettingsRepository
 import dev.netvalve.scheduler.RateUnits
 import dev.netvalve.scheduler.SchedMode
-import dev.netvalve.scheduler.Tier
-import dev.netvalve.service.TierStore
+import dev.netvalve.service.PriorityStore
 import dev.netvalve.rules.DeviceState
 import dev.netvalve.rules.DeviceStateMonitor
 import dev.netvalve.service.BatteryOptimizations
@@ -32,14 +31,15 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 
 data class ControlledAppRow(
     val packageName: String,
     val label: String,
     val rule: AppRule?,
-    /** Priority tier shown on the Home screen (fixed for NetValve and PayProbe). */
-    val tier: Tier = Tier.MEDIUM,
+    /** 1-based place in the priority list; 0 = not in the list ("normal"). */
+    val rank: Int = 0,
 )
 
 data class DashboardUiState(
@@ -67,7 +67,7 @@ class DashboardViewModel @Inject constructor(
     private val selectionRepository: AppSelectionRepository,
     private val statsCollector: StatsCollector,
     private val appInfo: AppInfoLookup,
-    private val tierStore: TierStore,
+    private val priorityStore: PriorityStore,
     deviceStateMonitor: DeviceStateMonitor,
 ) : ViewModel() {
 
@@ -106,15 +106,35 @@ class DashboardViewModel @Inject constructor(
                 ownAppTicked = p.selected.contains(context.packageName),
                 usageAccessGranted = UsageAccess.isGranted(context),
             )
-        }.combine(tierStore.tiers) { state, _ ->
-            // Re-read the tiers whenever an assignment changes (or the saved ones finish loading).
+        }.combine(priorityStore.list) { state, _ ->
+            // Re-read the ranks whenever the priority list changes (or the saved list finishes loading).
             state.copy(
-                controlledApps = state.controlledApps.map { it.copy(tier = tierStore.tierOfPackage(it.packageName)) },
+                controlledApps = state.controlledApps.map { it.copy(rank = priorityStore.rankOf(it.packageName)) },
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
 
     fun pauseResume() {
         if (uiState.value.status.state == TunnelState.PAUSED) controller.resume() else controller.pause()
+    }
+
+    /**
+     * Settings of the production-stage app, used by the simple Home screen: every app goes through
+     * the tunnel except the ticked ones (NetValve itself is always left out), and Priority Control is
+     * on. Applied once per app start, and only when something differs; a running tunnel is rebuilt.
+     * The shared speed (R) is NOT touched here: 0 means "not scheduled", so nothing is slowed down
+     * until a speed is set (by hand in Test tools now, automatically in patch B).
+     */
+    fun applyProductionDefaults() {
+        if (!ProductionDefaults.claim()) return
+        viewModelScope.launch {
+            val before = settingsRepository.current()
+            if (before.selectionMode != SelectionMode.ALL_EXCEPT || before.schedMode != SchedMode.PRIORITY_PACER) {
+                settingsRepository.updateSettings {
+                    it.copy(selectionMode = SelectionMode.ALL_EXCEPT, schedMode = SchedMode.PRIORITY_PACER)
+                }
+                if (uiState.value.running) controller.restart()
+            }
+        }
     }
 
     fun setSelectionMode(mode: SelectionMode) = update { it.copy(selectionMode = mode) }
@@ -150,4 +170,10 @@ class DashboardViewModel @Inject constructor(
         val settings: GlobalSettings,
         val device: DeviceState,
     )
+}
+
+/** Makes sure [DashboardViewModel.applyProductionDefaults] runs only once per app start. */
+internal object ProductionDefaults {
+    private val applied = AtomicBoolean(false)
+    fun claim(): Boolean = applied.compareAndSet(false, true)
 }

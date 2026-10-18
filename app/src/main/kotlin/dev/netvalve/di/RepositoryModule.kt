@@ -14,7 +14,9 @@ import dev.netvalve.repository.LogRepository
 import dev.netvalve.repository.PackageManagerAppRepository
 import dev.netvalve.repository.RoomLogRepository
 import dev.netvalve.repository.RoomStatsRepository
+import dev.netvalve.repository.DataStorePriorityOrderRepository
 import dev.netvalve.repository.DataStoreTierRepository
+import dev.netvalve.repository.PriorityOrderRepository
 import dev.netvalve.repository.SettingsRepository
 import dev.netvalve.repository.TierRepository
 import dev.netvalve.repository.StatsRepository
@@ -51,6 +53,13 @@ object RepositoryModule {
         dataStore: DataStore<Preferences>,
         json: Json,
     ): TierRepository = DataStoreTierRepository(dataStore, json)
+
+    @Provides
+    @Singleton
+    fun providePriorityOrderRepository(
+        dataStore: DataStore<Preferences>,
+        json: Json,
+    ): PriorityOrderRepository = DataStorePriorityOrderRepository(dataStore, json)
 
     @Provides
     @Singleton

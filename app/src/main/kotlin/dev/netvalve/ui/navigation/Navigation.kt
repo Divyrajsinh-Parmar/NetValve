@@ -27,9 +27,12 @@ import androidx.navigation.navArgument
 import dev.netvalve.ui.appdetail.AppDetailScreen
 import dev.netvalve.ui.apps.AppsScreen
 import dev.netvalve.ui.dashboard.DashboardScreen
+import dev.netvalve.ui.home.HomeScreen
 import dev.netvalve.ui.logs.LogsScreen
+import dev.netvalve.ui.priority.PriorityScreen
 import dev.netvalve.ui.sim.SimulatorScreen
 import dev.netvalve.ui.stats.StatsScreen
+import dev.netvalve.ui.tools.ToolsScreen
 
 /**
  * Activity-provided callbacks that require an Activity/Context (VPN consent,
@@ -51,8 +54,14 @@ sealed class Destination(val route: String, val label: String, val icon: ImageVe
     data object Simulator : Destination("sim", "Load", Icons.Filled.Speed)
     data object Logs : Destination("logs", "Logs", Icons.Filled.Article)
 
+    // Test tools (hidden: opened by seven taps on the small "NetValve" text on the Home screen).
+    data object Tools : Destination("tools", "Test tools", Icons.Filled.Speed)
+    data object AdvancedHome : Destination("tools/home", "Advanced home", Icons.Filled.Shield)
+    data object AdvancedApps : Destination("tools/apps", "Technical apps", Icons.Filled.Apps)
+
     companion object {
-        val bottomBar = listOf(Dashboard, Apps, Stats, Simulator, Logs)
+        /** Production stage: three tabs. Simulator and Logs are reached from Test tools only. */
+        val bottomBar = listOf(Dashboard, Apps, Stats)
         fun appDetail(pkg: String) = "appdetail/$pkg"
         const val APP_DETAIL_ROUTE = "appdetail/{package}"
     }
@@ -83,8 +92,7 @@ fun NetValveNavGraph(actions: AppActions) {
             NavigationBar {
                 Destination.bottomBar.forEach { dest ->
                     NavigationBarItem(
-                        selected = currentRoute == dest.route ||
-                            (dest == Destination.Apps && currentRoute == Destination.APP_DETAIL_ROUTE),
+                        selected = currentRoute == dest.route,
                         onClick = { nav.switchTab(dest) },
                         icon = { Icon(dest.icon, contentDescription = dest.label) },
                         label = { Text(dest.label) },
@@ -99,13 +107,28 @@ fun NetValveNavGraph(actions: AppActions) {
             modifier = Modifier.padding(padding),
         ) {
             composable(Destination.Dashboard.route) {
+                HomeScreen(
+                    actions = actions,
+                    onOpenTools = { nav.navigate(Destination.Tools.route) },
+                )
+            }
+            composable(Destination.Apps.route) { PriorityScreen() }
+            composable(Destination.Tools.route) {
+                ToolsScreen(
+                    onOpenAdvancedHome = { nav.navigate(Destination.AdvancedHome.route) },
+                    onOpenAdvancedApps = { nav.navigate(Destination.AdvancedApps.route) },
+                    onOpenLoad = { nav.navigate(Destination.Simulator.route) },
+                    onOpenLogs = { nav.navigate(Destination.Logs.route) },
+                )
+            }
+            composable(Destination.AdvancedHome.route) {
                 DashboardScreen(
                     actions = actions,
-                    onOpenApps = { nav.switchTab(Destination.Apps) },
+                    onOpenApps = { nav.navigate(Destination.AdvancedApps.route) },
                     onOpenApp = { pkg -> nav.navigate(Destination.appDetail(pkg)) },
                 )
             }
-            composable(Destination.Apps.route) {
+            composable(Destination.AdvancedApps.route) {
                 AppsScreen(onOpenApp = { pkg -> nav.navigate(Destination.appDetail(pkg)) })
             }
             composable(Destination.Stats.route) { StatsScreen() }
