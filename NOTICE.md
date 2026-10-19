@@ -24,6 +24,7 @@ The original README and developer handoff are kept for reference in `docs/upstre
 |---|---|
 | `network/ConnectionManager.kt` | bind the TCP socket before `protect()` (hypothesis: `protect()` failed on a socket without a file descriptor); 18 Oct 2026: NAT64 fallback for IPv4 destinations that are unreachable (dials `64:ff9b::<IPv4>`), failed sockets are closed |
 | `ui/navigation/Navigation.kt` | `switchTab` helper so the Dashboard tab works from every screen |
+| `netstack/bridge.go` | 18 Oct 2026 (patch F1): `Tunnel.Stop()` removes the NIC and closes the TUN fd (the pinned gVisor fdbased `Close()` does nothing); `NewTunnel` closes the fd on its early error paths |
 | `ui/apps/AppsScreen.kt`, `ui/apps/AppSelectionViewModel.kt` | real app icons, explanation of what a tick means, Tick all / Clear all |
 | `ui/theme/Theme.kt`, `AndroidManifest.xml` | 18 Oct 2026 (patch A2): the app is always light (`darkTheme` defaults to false; the manifest base theme is `Theme.Material.Light.NoActionBar`); dark colours stay in the file |
 | `ui/navigation/Navigation.kt` | 18 Oct 2026 (patch A2): three tabs (Home, Apps, Stats); Test tools, Advanced home and Technical apps routes added; Load and Logs reached from Test tools |

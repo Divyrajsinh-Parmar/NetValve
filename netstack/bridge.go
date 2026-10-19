@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/sagernet/gvisor/pkg/tcpip"
@@ -81,6 +82,7 @@ const (
 // Tunnel owns the running stack. Created by NewTunnel, torn down by Stop.
 type Tunnel struct {
 	stack    *stack.Stack
+	tunFd    int // owned by the Tunnel; closed in Stop (see there)
 	handler  Handler
 	ipv6Mode string
 	mu       sync.Mutex
@@ -110,6 +112,7 @@ func NewTunnel(tunFd int, mtu int, ipv6Mode string, handler Handler) (*Tunnel, e
 		MTU: uint32(mtu),
 	})
 	if err != nil {
+		_ = syscall.Close(tunFd) // we own the fd, do not leave the VPN interface open
 		return nil, fmt.Errorf("fdbased.New: %w", err)
 	}
 
@@ -120,6 +123,7 @@ func NewTunnel(tunFd int, mtu int, ipv6Mode string, handler Handler) (*Tunnel, e
 	})
 
 	if tErr := s.CreateNIC(nicID, linkEP); tErr != nil {
+		_ = syscall.Close(tunFd)
 		return nil, fmt.Errorf("CreateNIC: %v", tErr)
 	}
 	// The TUN carries traffic for arbitrary destinations, so the NIC must accept
@@ -137,7 +141,7 @@ func NewTunnel(tunFd int, mtu int, ipv6Mode string, handler Handler) (*Tunnel, e
 		{Destination: header.IPv6EmptySubnet, NIC: nicID},
 	})
 
-	t := &Tunnel{stack: s, handler: handler, ipv6Mode: ipv6Mode, stopCh: make(chan struct{})}
+	t := &Tunnel{stack: s, tunFd: tunFd, handler: handler, ipv6Mode: ipv6Mode, stopCh: make(chan struct{})}
 	t.installTCPForwarder()
 	t.installUDPForwarder()
 	t.logf(logInfo, "netstack started (mtu=%d ipv6=%s)", mtu, ipv6Mode)
@@ -164,6 +168,12 @@ func (t *Tunnel) livenessLoop() {
 }
 
 // Stop tears down the stack and releases the TUN. Idempotent.
+//
+// The TUN fd is closed HERE, explicitly. In the pinned gVisor fork the fdbased link endpoint's
+// Close() does nothing and Stack.Close() does not touch the link, so without this the fd stayed
+// open after Stop and the system kept the VPN (the key icon in the status bar) until the whole app
+// process died. RemoveNIC detaches the link endpoint, which stops the goroutines that read the fd
+// and waits for them; only then is it safe to close the fd.
 func (t *Tunnel) Stop() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -173,7 +183,27 @@ func (t *Tunnel) Stop() error {
 	t.closed = true
 	close(t.stopCh)
 	t.logf(logInfo, "netstack stopping")
-	t.stack.Close()
+
+	done := make(chan struct{})
+	go func() {
+		defer func() {
+			_ = recover()
+			close(done)
+		}()
+		t.stack.RemoveNIC(nicID)
+		t.stack.Close()
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.logf(logWarn, "netstack stop: teardown still running after 3 s, closing the TUN anyway")
+	}
+
+	if err := syscall.Close(t.tunFd); err != nil {
+		t.logf(logWarn, "closing the TUN fd failed: %v", err)
+	} else {
+		t.logf(logInfo, "TUN fd closed")
+	}
 	return nil
 }
 
