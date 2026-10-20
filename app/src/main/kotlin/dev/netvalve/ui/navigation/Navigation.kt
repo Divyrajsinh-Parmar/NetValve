@@ -32,6 +32,7 @@ import dev.netvalve.ui.logs.LogsScreen
 import dev.netvalve.ui.priority.PriorityScreen
 import dev.netvalve.ui.sim.SimulatorScreen
 import dev.netvalve.ui.stats.StatsScreen
+import dev.netvalve.ui.stats.TechnicalStatsScreen
 import dev.netvalve.ui.tools.ToolsScreen
 
 /**
@@ -58,6 +59,7 @@ sealed class Destination(val route: String, val label: String, val icon: ImageVe
     data object Tools : Destination("tools", "Test tools", Icons.Filled.Speed)
     data object AdvancedHome : Destination("tools/home", "Advanced home", Icons.Filled.Shield)
     data object AdvancedApps : Destination("tools/apps", "Technical apps", Icons.Filled.Apps)
+    data object TechnicalStats : Destination("tools/stats", "Technical statistics", Icons.Filled.QueryStats)
 
     companion object {
         /** Production stage: three tabs. Simulator and Logs are reached from Test tools only. */
@@ -119,6 +121,7 @@ fun NetValveNavGraph(actions: AppActions) {
                     onOpenAdvancedApps = { nav.navigate(Destination.AdvancedApps.route) },
                     onOpenLoad = { nav.navigate(Destination.Simulator.route) },
                     onOpenLogs = { nav.navigate(Destination.Logs.route) },
+                    onOpenTechnicalStats = { nav.navigate(Destination.TechnicalStats.route) },
                 )
             }
             composable(Destination.AdvancedHome.route) {
@@ -131,7 +134,8 @@ fun NetValveNavGraph(actions: AppActions) {
             composable(Destination.AdvancedApps.route) {
                 AppsScreen(onOpenApp = { pkg -> nav.navigate(Destination.appDetail(pkg)) })
             }
-            composable(Destination.Stats.route) { StatsScreen() }
+            composable(Destination.Stats.route) { StatsScreen(onShare = actions.exportLogs) }
+            composable(Destination.TechnicalStats.route) { TechnicalStatsScreen() }
             composable(Destination.Simulator.route) { SimulatorScreen() }
             composable(Destination.Logs.route) { LogsScreen(actions = actions) }
             composable(

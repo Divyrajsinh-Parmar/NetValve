@@ -32,7 +32,10 @@ The original README and developer handoff are kept for reference in `docs/upstre
 | `ui/apps/AppsScreen.kt`, `ui/apps/AppSelectionViewModel.kt` | 18 Oct 2026 (patch A2): tier chip replaced by a priority-list chip; `AppIcon` made `internal`; the screen now lives in Test tools |
 | `di/EngineModule.kt`, `di/RepositoryModule.kt` | 18 Oct 2026 (patch A2): the scheduler controller gets the ranked level resolver; `PriorityOrderRepository` provided |
 | `MainActivity.kt` | 19 Oct 2026 (patch B1): shows the first-run permission guide before the app, reads permissions live in `onResume`, separate VPN consent launcher for the guide, no notification request at start |
-| `NetValveApp.kt` | 19 Oct 2026 (patch B2): starts `AutoRateManager` in `onCreate` |
+| `NetValveApp.kt` | 19 Oct 2026 (patch B2): starts `AutoRateManager` in `onCreate`; 20 Oct 2026 (patch B3): also starts `HealthRecorder` |
+| `ui/stats/StatsScreen.kt` | 20 Oct 2026 (patch B3): replaced by the simple Stats tab (one status, few numbers); the original upstream screen is kept unchanged in logic as `ui/stats/TechnicalStatsScreen.kt` (function renamed `TechnicalStatsScreen`, title "Technical statistics") and opened from Test tools |
+| `ui/navigation/Navigation.kt` | 20 Oct 2026 (patch B3): Stats tab shows the simple screen; route `tools/stats` for the technical statistics; the Share button reuses `AppActions.exportLogs` |
+| `di/RepositoryModule.kt` | 20 Oct 2026 (patch B3): `HealthRepository` provided |
 
 ### New code (our contribution, all under `app/src/main/kotlin/dev/netvalve/scheduler/`)
 `SchedulerModel.kt`, `PriorityPacerCore.kt`, `AdaptiveThrottle.kt`, `CalibratorMath.kt`,
@@ -44,7 +47,7 @@ Simulation output: `docs/data/`.
 ### New code for the production-stage app (patch A2, 18 Oct 2026; our own code)
 `app/src/main/kotlin/dev/netvalve/service/PriorityStore.kt`, `repository/PriorityOrderRepository.kt`,
 `ui/priority/PriorityScreen.kt`, `ui/priority/PriorityViewModel.kt`, `ui/home/HomeScreen.kt`,
-`ui/tools/ToolsScreen.kt`, `ui/setup/SetupGuide.kt`, `ui/setup/SetupGuideScreen.kt` (patch B1). `calibration/RatePolicy.kt`, `SpeedMeter.kt`, `LinkSpeedTest.kt`, `CalibrationRepository.kt`, `AutoRateManager.kt` (patch B2). `scheduler/SchedulerController.kt` (our file) now uses the ranked pacer.
+`ui/tools/ToolsScreen.kt`, `ui/setup/SetupGuide.kt`, `ui/setup/SetupGuideScreen.kt` (patch B1). `calibration/RatePolicy.kt`, `SpeedMeter.kt`, `LinkSpeedTest.kt`, `CalibrationRepository.kt`, `AutoRateManager.kt` (patch B2). `scheduler/SchedulerController.kt` (our file) now uses the ranked pacer. Patch B3 (20 Oct 2026): `scheduler/LevelByteCounter.kt`, `health/HealthCounters.kt`, `HealthRules.kt`, `HealthRepository.kt`, `HealthRecorder.kt`, `ui/stats/HealthViewModel.kt`, `ui/stats/TechnicalStatsScreen.kt` (a renamed copy of the upstream statistics screen); `SchedulerController` now also counts bytes and waits per level.
 Not used any more but kept: `service/TierStore.kt`, `repository/TierRepository.kt`, `scheduler/Tier*.kt`,
 `PriorityPacerCore.kt`, `SchedulerPacer.kt`.
 

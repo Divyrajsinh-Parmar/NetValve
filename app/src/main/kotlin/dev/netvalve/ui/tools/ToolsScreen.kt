@@ -25,6 +25,7 @@ fun ToolsScreen(
     onOpenAdvancedApps: () -> Unit,
     onOpenLoad: () -> Unit,
     onOpenLogs: () -> Unit,
+    onOpenTechnicalStats: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
         TopAppBar(title = { Text("Test tools") })
@@ -48,6 +49,9 @@ fun ToolsScreen(
             }
             FilledTonalButton(onClick = onOpenLogs, modifier = Modifier.fillMaxWidth()) {
                 Text("Logs")
+            }
+            FilledTonalButton(onClick = onOpenTechnicalStats, modifier = Modifier.fillMaxWidth()) {
+                Text("Technical statistics (per app)")
             }
         }
     }

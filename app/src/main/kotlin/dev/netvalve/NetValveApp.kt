@@ -2,6 +2,7 @@ package dev.netvalve
 
 import android.app.Application
 import dev.netvalve.calibration.AutoRateManager
+import dev.netvalve.health.HealthRecorder
 import dev.netvalve.log.LogLevel
 import dev.netvalve.log.Logger
 import dev.netvalve.repository.SettingsRepository
@@ -26,6 +27,7 @@ class NetValveApp : Application() {
     @Inject lateinit var logger: Logger
     @Inject @AppScope lateinit var appScope: CoroutineScope
     @Inject lateinit var autoRateManager: AutoRateManager
+    @Inject lateinit var healthRecorder: HealthRecorder
 
     override fun onCreate() {
         super.onCreate()
@@ -39,5 +41,8 @@ class NetValveApp : Application() {
 
         // Measures and keeps the shared speed (R) right while protection is on (patch B2).
         autoRateManager.start()
+
+        // Counts running time, tunnel starts, problems and bytes per level for the Stats tab (patch B3).
+        healthRecorder.start()
     }
 }

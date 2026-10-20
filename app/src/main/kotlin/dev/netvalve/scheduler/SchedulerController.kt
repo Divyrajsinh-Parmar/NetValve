@@ -24,7 +24,7 @@ class SchedulerController(
     scope: CoroutineScope,
     settings: Flow<SchedulerSettings>,
     private val levels: LevelResolver,
-    nowMs: () -> Long,
+    private val nowMs: () -> Long,
 ) {
     @Volatile
     var current: SchedulerSettings = SchedulerSettings()
@@ -32,6 +32,7 @@ class SchedulerController(
 
     private val pacer = RankedPacer(scope, SchedulerConfig(), SchedulerConfig(), PriorityLevels.COUNT, nowMs)
     private val nextFlowId = AtomicLong(1L)
+    private val counter = LevelByteCounter(PriorityLevels.COUNT)
 
     init {
         scope.launch { settings.collect { apply(it) } }
@@ -53,11 +54,23 @@ class SchedulerController(
 
     fun levelOf(uid: Int): Int = levels.levelOfUid(uid)
 
-    /** Suspends until [bytes] of this flow may go out in [lane]; returns at once when inactive. */
+    /**
+     * Suspends until [bytes] of this flow may go out in [lane]; returns at once when inactive.
+     * Every chunk is also counted per level (bytes, and the wait while scheduled) for the health
+     * summary; the counting is a few atomic adds and cannot fail or block.
+     */
     suspend fun acquire(uid: Int, flowId: Long, lane: Lane, bytes: Int) {
+        // Looked up even when the scheduler is off (for the counters); a failure here must not stop the flow.
+        val level = runCatching { levels.levelOfUid(uid) }.getOrDefault(PriorityLevels.NORMAL)
+        counter.addBytes(level, lane, bytes, attributed = uid >= 0)
         if (!current.activeFor(lane)) return
-        pacer.acquire(levels.levelOfUid(uid), flowId, lane, bytes)
+        val startedAt = nowMs()
+        pacer.acquire(level, flowId, lane, bytes)
+        counter.addWait(level, nowMs() - startedAt)
     }
+
+    /** What the relay carried per level since the app process started (patch B3). */
+    fun totals(): LevelTotals = counter.snapshot()
 
     /** Forget whatever the flow still has queued (call when its connection ends). */
     fun releaseFlow(flowId: Long) = pacer.releaseFlow(flowId)
