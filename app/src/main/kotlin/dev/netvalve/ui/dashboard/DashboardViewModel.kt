@@ -120,7 +120,8 @@ class DashboardViewModel @Inject constructor(
     /**
      * Settings of the production-stage app, used by the simple Home screen: every app goes through
      * the tunnel except the ticked ones (NetValve itself is always left out), and Priority Control is
-     * on. Applied once per app start, and only when something differs; a running tunnel is rebuilt.
+     * on, and the tunnel starts again after a phone restart if protection was on before it. Applied once per
+     * app start, and only when something differs; a running tunnel is rebuilt when its app set changed.
      * The shared speed (R) is NOT touched here: 0 means "not scheduled", so nothing is slowed down
      * until a speed is set (by hand in Test tools now, automatically in patch B).
      */
@@ -128,11 +129,18 @@ class DashboardViewModel @Inject constructor(
         if (!ProductionDefaults.claim()) return
         viewModelScope.launch {
             val before = settingsRepository.current()
-            if (before.selectionMode != SelectionMode.ALL_EXCEPT || before.schedMode != SchedMode.PRIORITY_PACER) {
+            val tunnelChange = before.selectionMode != SelectionMode.ALL_EXCEPT ||
+                before.schedMode != SchedMode.PRIORITY_PACER
+            if (tunnelChange || !before.autoStartOnBoot) {
                 settingsRepository.updateSettings {
-                    it.copy(selectionMode = SelectionMode.ALL_EXCEPT, schedMode = SchedMode.PRIORITY_PACER)
+                    it.copy(
+                        selectionMode = SelectionMode.ALL_EXCEPT,
+                        schedMode = SchedMode.PRIORITY_PACER,
+                        autoStartOnBoot = true,
+                    )
                 }
-                if (uiState.value.running) controller.restart()
+                // Only a changed tunnel set needs a rebuild; the boot flag takes effect at the next boot.
+                if (tunnelChange && uiState.value.running) controller.restart()
             }
         }
     }

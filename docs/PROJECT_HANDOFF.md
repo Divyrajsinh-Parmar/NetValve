@@ -258,6 +258,10 @@ Pure Kotlin, no Android imports, deterministic (injected clock), so it is testab
 
 **Known gaps:** no automatic R yet (patch B); no simple way to exclude a banking app (old tick list in Test tools); the Stats tab is still technical; the first-run guide does not exist yet.
 
+### 9.5 First-run permission guide (Session 13, patch B1, 19 Oct 2026; not compiled by Gradle, not seen on a phone)
+
+`MainActivity` shows `SetupGuideScreen` instead of the app while `SetupGuide.nextStep(...)` returns a step. Permissions asked, in this order: notifications (Android 13 and later), VPN consent, battery-optimisation exemption. Usage access is deliberately NOT asked (only the per-app foreground rules in Test tools use it). The phone is read live on every `onResume`; nothing is remembered, so granted permissions are never asked again. Only notifications and battery can be skipped, and only after one try. `DashboardViewModel.applyProductionDefaults()` also turns `autoStartOnBoot` on.
+
 ## 10. Results so far (simulation, plus first phone baselines)
 
 **Model.** One 5 Mbps bottleneck with a 256 KB FIFO (about 410 ms of queue), base RTT 20 ms. A High app sends a 1.4 KB request every 200 ms in 10 s bursts separated by 10 s of silence; Low is three greedy downloads. R = 0.9 x link. Simplifications: no TCP back-off (the standing queue is what matters), measured High requests are never dropped (this *understates* unscheduled latency). Reproduce: `./gradlew test` prints the tables; CSV in `docs/data/sim_results.csv`.
@@ -415,3 +419,4 @@ M0 adopt and verify (done) · M1 PayProbe (done) · M2 Go/No-Go experiment (in p
 | 18 Oct 2026 | Session 13 (patch A1): production-stage decision (2 to 3 days of real use instead of more controlled tests); ranked priority engine (ordered priority list, strict level per rank) written and tested in an AI sandbox, not wired in, not built with Gradle (Section 9.3) | 9.3 |
 | 18 Oct 2026 | Session 13 (patch A2): ranked engine wired into the relay (`SchedulerController`, `PriorityStore`), Apps tab = ordered priority list, simple Home with Pause, hidden Test tools, always-light theme (Section 9.4) | 9.4 |
 | 18 Oct 2026 | Session 13 (patch F1): `netstack/bridge.go` `Tunnel.Stop()` now removes the NIC and closes the TUN fd itself (gVisor fdbased `Close()` is a no-op); AAR rebuilt on the Mac (`build-aar.sh`); in one phone test the VPN key icon went away a few seconds after Stop (not repeated, Logs lines not seen) | Session 13 Update 2 |
+| 19 Oct 2026 | Session 13 (patch B1): first-run permission guide (notifications, VPN, battery), live permission check, boot auto-start on by default, Home hint about payment apps (Section 9.5) | 9.5 |

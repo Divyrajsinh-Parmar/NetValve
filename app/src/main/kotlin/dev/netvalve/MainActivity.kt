@@ -1,6 +1,8 @@
 package dev.netvalve
 
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -8,11 +10,20 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.core.content.ContextCompat
 import dev.netvalve.service.BatteryOptimizations
 import dev.netvalve.service.VpnController
 import dev.netvalve.ui.navigation.AppActions
 import dev.netvalve.ui.navigation.NetValveNavGraph
+import dev.netvalve.ui.setup.PermissionSnapshot
+import dev.netvalve.ui.setup.SetupActions
+import dev.netvalve.ui.setup.SetupGuide
+import dev.netvalve.ui.setup.SetupGuideScreen
+import dev.netvalve.ui.setup.SetupPermission
 import dev.netvalve.ui.theme.NetValveTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -33,21 +44,82 @@ class MainActivity : ComponentActivity() {
             if (result.resultCode == RESULT_OK) controller.start()
         }
 
+    // Used by the first-run guide: the consent is only collected here, the tunnel is NOT started.
+    private val setupConsentLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { /* onResume re-checks */ }
+
     private val notificationsPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* best-effort */ }
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* onResume re-checks */ }
+
+    // Counts every return to the screen (after a system dialog or a Settings page) so the first-run
+    // guide reads the permissions from the phone again.
+    private val resumeTick = mutableStateOf(0)
+
+    override fun onResume() {
+        super.onResume()
+        resumeTick.value = resumeTick.value + 1
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            notificationsPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-        }
-
         setContent {
             NetValveTheme {
-                val actions = remember { buildActions() }
-                NetValveNavGraph(actions = actions)
+                val tick by resumeTick
+                // Read live from the phone every time the app comes back to the front: nothing is
+                // remembered, so an allowed permission is never asked again.
+                val snapshot = remember(tick) { readPermissions() }
+                var skipped by remember { mutableStateOf(setOf<SetupPermission>()) }
+                val step = SetupGuide.nextStep(snapshot, skipped)
+                if (step != null) {
+                    SetupGuideScreen(
+                        snapshot = snapshot,
+                        current = step,
+                        onSkip = { skipped = skipped + it },
+                        actions = remember { buildSetupActions() },
+                    )
+                } else {
+                    val actions = remember { buildActions() }
+                    NetValveNavGraph(actions = actions)
+                }
+            }
+        }
+    }
+
+    private fun readPermissions() = PermissionSnapshot(
+        notifications = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED,
+        vpn = controller.consentIntent() == null,
+        battery = BatteryOptimizations.isIgnoringBatteryOptimizations(this),
+    )
+
+    private fun buildSetupActions() = SetupActions(
+        allow = { permission -> requestPermission(permission) },
+        openAppSettings = {
+            runCatching {
+                startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")),
+                )
+            }
+        },
+    )
+
+    /** Shows the system dialog or Settings page for one permission of the first-run guide. */
+    private fun requestPermission(permission: SetupPermission) {
+        when (permission) {
+            SetupPermission.NOTIFICATIONS -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    notificationsPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+            SetupPermission.VPN -> {
+                val consent = controller.consentIntent()
+                if (consent != null) setupConsentLauncher.launch(consent)
+            }
+            SetupPermission.BATTERY -> {
+                runCatching { startActivity(BatteryOptimizations.requestExemptionIntent(this)) }
             }
         }
     }

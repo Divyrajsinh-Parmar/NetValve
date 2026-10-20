@@ -119,7 +119,8 @@ fun HomeScreen(
                 SectionCard(title = "Priority apps") {
                     Text(
                         "Choose your priority apps and their order on the Apps tab. " +
-                            "If the internet ever feels wrong, press Pause.",
+                            "If the internet ever feels wrong, press Pause. " +
+                            "Banking and payment apps may not work while protection is on: switch it off for them.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
