@@ -14,6 +14,8 @@ import dev.netvalve.repository.LogRepository
 import dev.netvalve.repository.PackageManagerAppRepository
 import dev.netvalve.repository.RoomLogRepository
 import dev.netvalve.repository.RoomStatsRepository
+import dev.netvalve.calibration.CalibrationRepository
+import dev.netvalve.calibration.DataStoreCalibrationRepository
 import dev.netvalve.repository.DataStorePriorityOrderRepository
 import dev.netvalve.repository.DataStoreTierRepository
 import dev.netvalve.repository.PriorityOrderRepository
@@ -60,6 +62,13 @@ object RepositoryModule {
         dataStore: DataStore<Preferences>,
         json: Json,
     ): PriorityOrderRepository = DataStorePriorityOrderRepository(dataStore, json)
+
+    @Provides
+    @Singleton
+    fun provideCalibrationRepository(
+        dataStore: DataStore<Preferences>,
+        json: Json,
+    ): CalibrationRepository = DataStoreCalibrationRepository(dataStore, json)
 
     @Provides
     @Singleton

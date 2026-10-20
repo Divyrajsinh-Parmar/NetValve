@@ -262,6 +262,10 @@ Pure Kotlin, no Android imports, deterministic (injected clock), so it is testab
 
 `MainActivity` shows `SetupGuideScreen` instead of the app while `SetupGuide.nextStep(...)` returns a step. Permissions asked, in this order: notifications (Android 13 and later), VPN consent, battery-optimisation exemption. Usage access is deliberately NOT asked (only the per-app foreground rules in Test tools use it). The phone is read live on every `onResume`; nothing is remembered, so granted permissions are never asked again. Only notifications and battery can be skipped, and only after one try. `DashboardViewModel.applyProductionDefaults()` also turns `autoStartOnBoot` on.
 
+### 9.6 Automatic shared speed (Session 13, patch B2, 19 Oct 2026; sandbox-tested pure parts only)
+
+`calibration/AutoRateManager` (started in `NetValveApp.onCreate`) watches the tunnel state and the app's default network. In the production settings it applies the last known R of the network type (0 if none), measures the download speed with `LinkSpeedTest` after 3 s (about 8 s, first 2 s discarded, R = 0.9 x steady speed, URL in `RatePolicy.DOWNLOAD_URL`), stores it in DataStore (`calibration_json`) and applies it as `schedRateDownBytesPerSec` (upload R always 0). It repeats on every network change and every 20 minutes at a quiet moment. A failure keeps the last known value or no shaping. All steps are logged ("auto speed: ..." in the Logs tab). See Session 13 Update 4 for evidence and open risks.
+
 ## 10. Results so far (simulation, plus first phone baselines)
 
 **Model.** One 5 Mbps bottleneck with a 256 KB FIFO (about 410 ms of queue), base RTT 20 ms. A High app sends a 1.4 KB request every 200 ms in 10 s bursts separated by 10 s of silence; Low is three greedy downloads. R = 0.9 x link. Simplifications: no TCP back-off (the standing queue is what matters), measured High requests are never dropped (this *understates* unscheduled latency). Reproduce: `./gradlew test` prints the tables; CSV in `docs/data/sim_results.csv`.
@@ -420,3 +424,5 @@ M0 adopt and verify (done) · M1 PayProbe (done) · M2 Go/No-Go experiment (in p
 | 18 Oct 2026 | Session 13 (patch A2): ranked engine wired into the relay (`SchedulerController`, `PriorityStore`), Apps tab = ordered priority list, simple Home with Pause, hidden Test tools, always-light theme (Section 9.4) | 9.4 |
 | 18 Oct 2026 | Session 13 (patch F1): `netstack/bridge.go` `Tunnel.Stop()` now removes the NIC and closes the TUN fd itself (gVisor fdbased `Close()` is a no-op); AAR rebuilt on the Mac (`build-aar.sh`); in one phone test the VPN key icon went away a few seconds after Stop (not repeated, Logs lines not seen) | Session 13 Update 2 |
 | 19 Oct 2026 | Session 13 (patch B1): first-run permission guide (notifications, VPN, battery), live permission check, boot auto-start on by default, Home hint about payment apps (Section 9.5) | 9.5 |
+| 19 Oct 2026 | Session 13 (patch B2): automatic shared speed (measure, store per network type, re-measure on network change and every 20 min at a quiet moment, safe fallback) (Section 9.6) | 9.6 |
+| 19 Oct 2026 | Session 13 (Update 5): new `docs/PRODUCTION_STAGE_HANDOFF.md` (hand-off for another Claude account; supersedes `NEXT_SESSION_PROMPT.md`); B2 reported working by the student (no numbers seen) | PRODUCTION_STAGE_HANDOFF.md |

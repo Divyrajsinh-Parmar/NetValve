@@ -1,3 +1,5 @@
+> **SUPERSEDED on 19 Oct 2026 by `docs/PRODUCTION_STAGE_HANDOFF.md`** (the student decided to go to a production stage; this older prompt plans test S4). Use the new file; it wins where they differ.
+
 # Prompt for the next Claude account (written 18 Oct 2026, Session 12, Update 16)
 
 Paste everything below the line into a new chat, attach the project zip (with .git), and send.

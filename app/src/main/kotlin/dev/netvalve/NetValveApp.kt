@@ -1,6 +1,7 @@
 package dev.netvalve
 
 import android.app.Application
+import dev.netvalve.calibration.AutoRateManager
 import dev.netvalve.log.LogLevel
 import dev.netvalve.log.Logger
 import dev.netvalve.repository.SettingsRepository
@@ -24,6 +25,7 @@ class NetValveApp : Application() {
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var logger: Logger
     @Inject @AppScope lateinit var appScope: CoroutineScope
+    @Inject lateinit var autoRateManager: AutoRateManager
 
     override fun onCreate() {
         super.onCreate()
@@ -34,5 +36,8 @@ class NetValveApp : Application() {
             .distinctUntilChanged()
             .onEach { level -> logger.setMinLevel(LogLevel.entries.getOrElse(level) { LogLevel.INFO }) }
             .launchIn(appScope)
+
+        // Measures and keeps the shared speed (R) right while protection is on (patch B2).
+        autoRateManager.start()
     }
 }
