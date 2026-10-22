@@ -36,6 +36,9 @@ The original README and developer handoff are kept for reference in `docs/upstre
 | `ui/stats/StatsScreen.kt` | 20 Oct 2026 (patch B3): replaced by the simple Stats tab (one status, few numbers); the original upstream screen is kept unchanged in logic as `ui/stats/TechnicalStatsScreen.kt` (function renamed `TechnicalStatsScreen`, title "Technical statistics") and opened from Test tools |
 | `ui/navigation/Navigation.kt` | 20 Oct 2026 (patch B3): Stats tab shows the simple screen; route `tools/stats` for the technical statistics; the Share button reuses `AppActions.exportLogs` |
 | `di/RepositoryModule.kt` | 20 Oct 2026 (patch B3): `HealthRepository` provided |
+| `rules/RuleEngine.kt` | 20 Oct 2026 (patch E1): `isControlled` returns true for the app's own UID while `DemoGate.active` (live demo only) |
+| `service/NetValveVpnService.kt` | 20 Oct 2026 (patch E1): the app's own package is excluded from the tunnel unless `DemoGate.active` (live demo only); 22 Oct 2026 (patch E1d): the same exception for the own package inside the ticked set |
+| `network/FlowSupervisor.kt` | 20 Oct 2026 (patch E1): in `relayTcp`, a flow to the demo probe's address gets level 1 via `SchedulerController.overrideFlowLevel` (no-op outside the demo) |
 
 ### New code (our contribution, all under `app/src/main/kotlin/dev/netvalve/scheduler/`)
 `SchedulerModel.kt`, `PriorityPacerCore.kt`, `AdaptiveThrottle.kt`, `CalibratorMath.kt`,
@@ -47,7 +50,7 @@ Simulation output: `docs/data/`.
 ### New code for the production-stage app (patch A2, 18 Oct 2026; our own code)
 `app/src/main/kotlin/dev/netvalve/service/PriorityStore.kt`, `repository/PriorityOrderRepository.kt`,
 `ui/priority/PriorityScreen.kt`, `ui/priority/PriorityViewModel.kt`, `ui/home/HomeScreen.kt`,
-`ui/tools/ToolsScreen.kt`, `ui/setup/SetupGuide.kt`, `ui/setup/SetupGuideScreen.kt` (patch B1). `calibration/RatePolicy.kt`, `SpeedMeter.kt`, `LinkSpeedTest.kt`, `CalibrationRepository.kt`, `AutoRateManager.kt` (patch B2). `scheduler/SchedulerController.kt` (our file) now uses the ranked pacer. Patch B3 (20 Oct 2026): `scheduler/LevelByteCounter.kt`, `health/HealthCounters.kt`, `HealthRules.kt`, `HealthRepository.kt`, `HealthRecorder.kt`, `ui/stats/HealthViewModel.kt`, `ui/stats/TechnicalStatsScreen.kt` (a renamed copy of the upstream statistics screen); `SchedulerController` now also counts bytes and waits per level.
+`ui/tools/ToolsScreen.kt`, `ui/setup/SetupGuide.kt`, `ui/setup/SetupGuideScreen.kt` (patch B1). `calibration/RatePolicy.kt`, `SpeedMeter.kt`, `LinkSpeedTest.kt`, `CalibrationRepository.kt`, `AutoRateManager.kt` (patch B2). `scheduler/SchedulerController.kt` (our file) now uses the ranked pacer. Patch B3 (20 Oct 2026): `scheduler/LevelByteCounter.kt`, `health/HealthCounters.kt`, `HealthRules.kt`, `HealthRepository.kt`, `HealthRecorder.kt`, `ui/stats/HealthViewModel.kt`, `ui/stats/TechnicalStatsScreen.kt` (a renamed copy of the upstream statistics screen); patch E1 (20 Oct 2026): `demo/` (`DemoGate`, `LatencyStats`, `DemoOrchestrator`, `HttpProbe`, `DemoRunner`), `ui/demo/`; `SchedulerController` now also counts bytes and waits per level.
 Not used any more but kept: `service/TierStore.kt`, `repository/TierRepository.kt`, `scheduler/Tier*.kt`,
 `PriorityPacerCore.kt`, `SchedulerPacer.kt`.
 

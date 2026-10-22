@@ -31,6 +31,7 @@ import dev.netvalve.ui.home.HomeScreen
 import dev.netvalve.ui.logs.LogsScreen
 import dev.netvalve.ui.priority.PriorityScreen
 import dev.netvalve.ui.sim.SimulatorScreen
+import dev.netvalve.ui.demo.DemoScreen
 import dev.netvalve.ui.stats.StatsScreen
 import dev.netvalve.ui.stats.TechnicalStatsScreen
 import dev.netvalve.ui.tools.ToolsScreen
@@ -60,6 +61,7 @@ sealed class Destination(val route: String, val label: String, val icon: ImageVe
     data object AdvancedHome : Destination("tools/home", "Advanced home", Icons.Filled.Shield)
     data object AdvancedApps : Destination("tools/apps", "Technical apps", Icons.Filled.Apps)
     data object TechnicalStats : Destination("tools/stats", "Technical statistics", Icons.Filled.QueryStats)
+    data object Demo : Destination("demo", "Live demo", Icons.Filled.QueryStats)
 
     companion object {
         /** Production stage: three tabs. Simulator and Logs are reached from Test tools only. */
@@ -134,7 +136,8 @@ fun NetValveNavGraph(actions: AppActions) {
             composable(Destination.AdvancedApps.route) {
                 AppsScreen(onOpenApp = { pkg -> nav.navigate(Destination.appDetail(pkg)) })
             }
-            composable(Destination.Stats.route) { StatsScreen(onShare = actions.exportLogs) }
+            composable(Destination.Stats.route) { StatsScreen(onShare = actions.exportLogs, onOpenDemo = { nav.navigate(Destination.Demo.route) }) }
+            composable(Destination.Demo.route) { DemoScreen(onShare = actions.exportLogs) }
             composable(Destination.TechnicalStats.route) { TechnicalStatsScreen() }
             composable(Destination.Simulator.route) { SimulatorScreen() }
             composable(Destination.Logs.route) { LogsScreen(actions = actions) }

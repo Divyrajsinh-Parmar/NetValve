@@ -33,6 +33,8 @@ class SchedulerController(
     private val pacer = RankedPacer(scope, SchedulerConfig(), SchedulerConfig(), PriorityLevels.COUNT, nowMs)
     private val nextFlowId = AtomicLong(1L)
     private val counter = LevelByteCounter(PriorityLevels.COUNT)
+    /** Flows whose level is set by hand (live demo only); empty in normal use. */
+    private val flowLevelOverride = java.util.concurrent.ConcurrentHashMap<Long, Int>()
 
     init {
         scope.launch { settings.collect { apply(it) } }
@@ -61,7 +63,7 @@ class SchedulerController(
      */
     suspend fun acquire(uid: Int, flowId: Long, lane: Lane, bytes: Int) {
         // Looked up even when the scheduler is off (for the counters); a failure here must not stop the flow.
-        val level = runCatching { levels.levelOfUid(uid) }.getOrDefault(PriorityLevels.NORMAL)
+        val level = flowLevelOverride[flowId] ?: runCatching { levels.levelOfUid(uid) }.getOrDefault(PriorityLevels.NORMAL)
         counter.addBytes(level, lane, bytes, attributed = uid >= 0)
         if (!current.activeFor(lane)) return
         val startedAt = nowMs()
@@ -73,7 +75,15 @@ class SchedulerController(
     fun totals(): LevelTotals = counter.snapshot()
 
     /** Forget whatever the flow still has queued (call when its connection ends). */
-    fun releaseFlow(flowId: Long) = pacer.releaseFlow(flowId)
+    fun releaseFlow(flowId: Long) {
+        flowLevelOverride.remove(flowId)
+        pacer.releaseFlow(flowId)
+    }
+
+    /** Puts one flow on [level] whatever its app is (live demo, patch E1). */
+    fun overrideFlowLevel(flowId: Long, level: Int) {
+        if (flowId != 0L) flowLevelOverride[flowId] = level
+    }
 
     /** One line for the debug log at flow start: level, mode and R of both directions. */
     fun describeFlow(uid: Int, flowId: Long): String {

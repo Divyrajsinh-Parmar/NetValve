@@ -1,5 +1,7 @@
 package dev.netvalve.network
 
+import dev.netvalve.demo.DemoGate
+import dev.netvalve.scheduler.PriorityLevels
 import dev.netvalve.data.model.Direction
 import dev.netvalve.log.LogCategory
 import dev.netvalve.log.Logger
@@ -92,6 +94,10 @@ class FlowSupervisor(
         val sched = if (unshaped) null else scheduler
         val flowId = sched?.newFlowId() ?: 0L
         sched?.let { logger.d(LogCategory.THROTTLE, it.describeFlow(uid, flowId), uid = uid) }
+        // Live demo only (patch E1): the probe's address gets the top priority level. A cheap no-op otherwise.
+        if (sched != null && DemoGate.isProbe(ctx.destinationAddress.hostAddress)) {
+            sched.overrideFlowLevel(flowId, PriorityLevels.FIRST_RANK)
+        }
 
         val upBucket = throttleManager.bucketFor(uid, Direction.UPLOAD)
         val downBucket = throttleManager.bucketFor(uid, Direction.DOWNLOAD)

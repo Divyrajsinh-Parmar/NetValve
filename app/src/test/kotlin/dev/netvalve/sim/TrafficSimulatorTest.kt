@@ -111,6 +111,78 @@ class TrafficSimulatorTest {
     }
 
     @Test
+    fun connectIpsAreUsedInsteadOfTheNameLookup() {
+        val scope = scope()
+        LocalServer().use { server ->
+            try {
+                // the host name cannot be resolved; only the given address can work (live demo, patch E1d)
+                val url = "http://download.invalid:${server.server.localPort}/x"
+                val t = SimHttp.parse(url, listOf("127.0.0.1"))
+                assertEquals("download.invalid", t.host)
+                assertEquals(listOf("127.0.0.1"), t.connectIps)
+                assertEquals(emptyList<String>(), SimHttp.parse(url).connectIps)
+                assertEquals(emptyList<String>(), SimHttp.parse(url, listOf(" ")).connectIps)
+                val sim = TrafficSimulator(scope)
+                sim.start(SimMode.DOWN, url, url, 0, downloadConnectIps = listOf("127.0.0.1"))
+                runBlocking { waitUntil(5_000) { sim.stats.value.totalDown > 0 } }
+                sim.stop()
+                assertTrue("down ${sim.stats.value.totalDown} errors ${sim.stats.value.errors}", sim.stats.value.totalDown > 0)
+                assertTrue(server.gets.get() >= 1)
+
+                // without the address the same URL fails (a name that does not exist)
+                val sim2 = TrafficSimulator(scope)
+                sim2.start(SimMode.DOWN, url, url, 0)
+                runBlocking { waitUntil(5_000) { sim2.stats.value.errors > 0 } }
+                sim2.stop()
+                assertTrue(sim2.stats.value.errors > 0)
+            } finally { scope.cancel() }
+        }
+    }
+
+    @Test
+    fun addressesAreOrderedWithBothFamiliesInTurn() {
+        val v6a = java.net.InetAddress.getByName("2001:db8::1")
+        val v6b = java.net.InetAddress.getByName("2001:db8::2")
+        val v4a = java.net.InetAddress.getByName("192.0.2.1")
+        val v4b = java.net.InetAddress.getByName("192.0.2.2")
+        assertEquals(listOf(v6a, v4a, v6b, v4b), SimHttp.orderAddresses(listOf(v6a, v6b, v4a, v4b)))
+        assertEquals(listOf(v4a, v6a, v4b), SimHttp.orderAddresses(listOf(v4a, v4b, v6a)))
+        assertEquals(listOf(v4a), SimHttp.orderAddresses(listOf(v4a)))
+        assertEquals(emptyList<java.net.InetAddress>(), SimHttp.orderAddresses(emptyList()))
+    }
+
+    @Test
+    fun openFallsBackToTheNextAddressWhenTheFirstOneFails() {
+        // nothing listens on the IPv6 loopback port, the IPv4 loopback one accepts
+        val server = ServerSocket(0, 5, java.net.InetAddress.getByName("127.0.0.1"))
+        try {
+            val t = SimHttp.parse("http://h.test:${server.localPort}/x")
+            val resolver = { _: String ->
+                listOf(java.net.InetAddress.getByName("::1"), java.net.InetAddress.getByName("127.0.0.1"))
+            }
+            SimHttp.open(t, connectTimeoutMs = 5_000, resolver = resolver).use { s ->
+                assertEquals("127.0.0.1", (s.remoteSocketAddress as java.net.InetSocketAddress).address.hostAddress)
+            }
+        } finally { server.close() }
+    }
+
+    @Test
+    fun openThrowsWhenNoAddressWorks() {
+        val closed = ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1")).also { it.close() }
+        val t = SimHttp.parse("http://h.test:${closed.localPort}/x")
+        try {
+            SimHttp.open(t, connectTimeoutMs = 2_000, resolver = { listOf(java.net.InetAddress.getByName("127.0.0.1")) }).close()
+            fail("expected an IOException")
+        } catch (_: java.io.IOException) {
+        }
+        try {
+            SimHttp.open(t, connectTimeoutMs = 2_000, resolver = { emptyList() }).close()
+            fail("expected UnknownHostException")
+        } catch (_: java.net.UnknownHostException) {
+        }
+    }
+
+    @Test
     fun invalidUrlStartsNothing() {
         val scope = scope()
         try {

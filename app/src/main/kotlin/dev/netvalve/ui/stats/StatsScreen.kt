@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -35,6 +36,7 @@ import java.util.Locale
 @Composable
 fun StatsScreen(
     onShare: (String) -> Unit,
+    onOpenDemo: () -> Unit,
     viewModel: HealthViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -66,6 +68,15 @@ fun StatsScreen(
                     Text(verdict.title, style = MaterialTheme.typography.titleLarge, color = statusColor)
                     Spacer(Modifier.height(4.dp))
                     Text(verdict.detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            item {
+                SectionCard {
+                    Text("Live demo", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(4.dp))
+                    Text("See the difference: lag before and after protection, with a big download running.", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(8.dp))
+                    Button(onClick = onOpenDemo) { Text("Open live demo") }
                 }
             }
             item {

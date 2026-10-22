@@ -61,8 +61,8 @@ class TrafficSimulator(
      * @throws IllegalArgumentException when a needed URL is invalid (nothing is started then).
      */
     @Synchronized
-    fun start(mode: SimMode, downloadUrl: String, uploadUrl: String, autoStopSec: Int) {
-        val down = if (mode != SimMode.UP) SimHttp.parse(downloadUrl) else null
+    fun start(mode: SimMode, downloadUrl: String, uploadUrl: String, autoStopSec: Int, downloadConnectIps: List<String> = emptyList()) {
+        val down = if (mode != SimMode.UP) SimHttp.parse(downloadUrl, downloadConnectIps) else null
         val up = if (mode != SimMode.DOWN) SimHttp.parse(uploadUrl) else null
         stopInternal()
 

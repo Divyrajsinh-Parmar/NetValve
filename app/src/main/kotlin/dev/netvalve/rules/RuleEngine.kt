@@ -1,5 +1,6 @@
 package dev.netvalve.rules
 
+import dev.netvalve.demo.DemoGate
 import dev.netvalve.data.model.AppRule
 import dev.netvalve.data.model.GlobalSettings
 import dev.netvalve.data.model.SelectionMode
@@ -73,6 +74,7 @@ class RuleEngine(
     fun isControlled(uid: Int): Boolean {
         val snap = snapshot.value
         if (uid == ownUid) {
+            if (DemoGate.active) return true // live demo (patch E1): the demo's own traffic is shaped
             // Never shape ourselves by accident. Our own traffic only enters the tunnel when the user
             // ticked NetValve in ONLY_SELECTED mode (ALL_EXCEPT always excludes our package), and that
             // is how the in-app traffic simulator is put under the scheduler (roadmap M5). Our relay

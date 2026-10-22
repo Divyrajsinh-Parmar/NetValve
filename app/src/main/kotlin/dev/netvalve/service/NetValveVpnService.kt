@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
 import dev.netvalve.data.model.GlobalSettings
+import dev.netvalve.demo.DemoGate
 import dev.netvalve.data.model.Ipv6Mode
 import dev.netvalve.data.model.SelectionMode
 import dev.netvalve.log.LogCategory
@@ -151,8 +152,11 @@ class NetValveVpnService : VpnService(), SocketProtector {
             }
             SelectionMode.ALL_EXCEPT -> {
                 // Never route our own traffic (prevents loops).
-                runCatching { builder.addDisallowedApplication(packageName) }
+                // Only the live demo (patch E1) puts the app itself in the tunnel.
+                if (!DemoGate.active) runCatching { builder.addDisallowedApplication(packageName) }
                 for (pkg in selected) {
+                    // The ticked set can still hold NetValve itself (older tests): during the live demo it must stay in the tunnel too.
+                    if (DemoGate.active && pkg == packageName) continue
                     try { builder.addDisallowedApplication(pkg) }
                     catch (_: PackageManager.NameNotFoundException) {
                         logger.w(LogCategory.SYSTEM, "disallowed app not found: $pkg")

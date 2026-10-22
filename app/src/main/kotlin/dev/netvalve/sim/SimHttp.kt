@@ -1,6 +1,11 @@
 package dev.netvalve.sim
 
+import java.io.IOException
+import java.net.Inet6Address
+import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.net.Socket
 import java.net.URI
 import javax.net.ssl.HttpsURLConnection
@@ -16,7 +21,17 @@ import javax.net.ssl.SSLSocketFactory
  */
 internal object SimHttp {
 
-    class Target(val secure: Boolean, val host: String, val port: Int, val pathAndQuery: String)
+    /**
+     * [connectIps]: when not empty, the connection goes to these addresses (in this order) instead of looking [host]
+     * up (the Host header and the TLS name stay [host]). The live demo gives the address it checked before (patch E1d).
+     */
+    class Target(
+        val secure: Boolean,
+        val host: String,
+        val port: Int,
+        val pathAndQuery: String,
+        val connectIps: List<String> = emptyList(),
+    )
 
     /**
      * Sent as User-Agent. The old "NetValve-Sim" got "403 Forbidden" from speed.cloudflare.com
@@ -26,7 +41,7 @@ internal object SimHttp {
     private const val USER_AGENT = "curl/8.5.0"
 
     /** @throws IllegalArgumentException for anything but a valid http or https URL. */
-    fun parse(url: String): Target {
+    fun parse(url: String, connectIps: List<String> = emptyList()): Target {
         val uri = try {
             URI(url.trim())
         } catch (e: Exception) {
@@ -39,7 +54,7 @@ internal object SimHttp {
         val secure = scheme == "https"
         val port = if (uri.port > 0) uri.port else if (secure) 443 else 80
         val path = (uri.rawPath?.takeIf { it.isNotEmpty() } ?: "/") + (uri.rawQuery?.let { "?$it" } ?: "")
-        return Target(secure, host, port, path)
+        return Target(secure, host, port, path, connectIps.filter { it.isNotBlank() })
     }
 
     fun getRequest(t: Target): ByteArray =
@@ -79,11 +94,59 @@ internal object SimHttp {
         return body.map { if (it.code < 32 || it.code > 126) ' ' else it }.joinToString("").trim()
     }
 
+    /** Upper limit for one address while another one is still waiting (a broken IPv6 or IPv4 route must not use the whole time). */
+    private const val PER_ADDRESS_MS = 4_000
+
+    /**
+     * The addresses in the order they are tried: IPv6 and IPv4 take turns, starting with the family the resolver put
+     * first (the idea of "happy eyeballs"), so one dead family cannot block the other.
+     */
+    fun orderAddresses(addresses: List<InetAddress>): List<InetAddress> {
+        if (addresses.size < 2) return addresses
+        val firstIsV6 = addresses.first() is Inet6Address
+        val first = addresses.filter { (it is Inet6Address) == firstIsV6 }
+        val second = addresses.filter { (it is Inet6Address) != firstIsV6 }
+        val out = ArrayList<InetAddress>(addresses.size)
+        for (i in 0 until maxOf(first.size, second.size)) {
+            first.getOrNull(i)?.let { out.add(it) }
+            second.getOrNull(i)?.let { out.add(it) }
+        }
+        return out
+    }
+
+    /** Tries the addresses one after the other; the first that connects wins. Throws the last error when none does. */
+    private fun connectAny(t: Target, totalTimeoutMs: Int, resolver: (String) -> List<InetAddress>): Socket {
+        val addresses = orderAddresses(
+            if (t.connectIps.isNotEmpty()) t.connectIps.mapNotNull { runCatching { InetAddress.getByName(it) }.getOrNull() } else resolver(t.host),
+        )
+        if (addresses.isEmpty()) throw UnknownHostException(t.host)
+        val deadline = System.nanoTime() + totalTimeoutMs * 1_000_000L
+        var last: IOException? = null
+        for ((i, address) in addresses.withIndex()) {
+            val remainingMs = ((deadline - System.nanoTime()) / 1_000_000L).toInt()
+            if (remainingMs <= 0) break
+            val perAddress = if (addresses.size - i > 1) minOf(remainingMs, PER_ADDRESS_MS) else remainingMs
+            val socket = Socket()
+            try {
+                socket.tcpNoDelay = true
+                socket.connect(InetSocketAddress(address, t.port), perAddress)
+                return socket
+            } catch (e: IOException) {
+                runCatching { socket.close() }
+                last = e
+            }
+        }
+        throw last ?: SocketTimeoutException("connect to ${t.host} timed out")
+    }
+
     /** Opens a NEW connection (TLS for https, with hostname check). The caller closes it. */
-    fun open(t: Target, connectTimeoutMs: Int = 10_000, readTimeoutMs: Int = 15_000): Socket {
-        val plain = Socket()
-        plain.tcpNoDelay = true
-        plain.connect(InetSocketAddress(t.host, t.port), connectTimeoutMs)
+    fun open(
+        t: Target,
+        connectTimeoutMs: Int = 10_000,
+        readTimeoutMs: Int = 15_000,
+        resolver: (String) -> List<InetAddress> = { InetAddress.getAllByName(it).toList() },
+    ): Socket {
+        val plain = connectAny(t, connectTimeoutMs, resolver)
         plain.soTimeout = readTimeoutMs
         if (!t.secure) return plain
         val ssl = (SSLSocketFactory.getDefault() as SSLSocketFactory).createSocket(plain, t.host, t.port, true) as SSLSocket

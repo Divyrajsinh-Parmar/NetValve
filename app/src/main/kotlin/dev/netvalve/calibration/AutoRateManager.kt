@@ -1,5 +1,6 @@
 package dev.netvalve.calibration
 
+import dev.netvalve.demo.DemoGate
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
@@ -110,6 +111,7 @@ class AutoRateManager @Inject constructor(
 
     private suspend fun measureAndApply(key: String) {
         if (!productionSettings()) return
+        if (DemoGate.active) return // the app itself is inside the tunnel during the live demo: a test now would measure the shaped line
         val measured: Long? = try {
             speedTest.measureDownload()
         } catch (e: CancellationException) {
